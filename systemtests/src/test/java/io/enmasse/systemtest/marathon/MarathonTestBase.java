@@ -51,7 +51,7 @@ public abstract class MarathonTestBase extends TestBase implements ISeleniumProv
     // Runner tests methods
     //========================================================================================================
 
-    private void runTestInLoop(int durationMinutes, ITestMethod test) {
+    protected void runTestInLoop(int durationMinutes, ITestMethod test) {
         log.info(String.format("Starting test running for %d minutes at %s",
                 durationMinutes, new Date().toString()));
         int fails = 0;
@@ -318,6 +318,7 @@ public abstract class MarathonTestBase extends TestBase implements ISeleniumProv
         });
         log.info("testCreateDeleteAddressesViaAgentLong finished");
     }
+
 
     //========================================================================================================
     // Help methods
