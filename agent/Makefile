@@ -23,7 +23,7 @@ package: build
 	mkdir -p build
 	cp package.json build
 	cd build; npm install --production
-	tar -czf build/agent-$(VERSION).tgz --transform='s|build/||g' bin lib www package.json node_modules
+	tar -czf build/agent-$(VERSION).tgz -s'|build/||g' bin lib www package.json node_modules
 
 test: npm_test
 

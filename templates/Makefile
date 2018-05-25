@@ -84,7 +84,8 @@ prepare:
 		AGENT_IMAGE=$(DOCKER_REGISTRY)/$(DOCKER_ORG)/$(AGENT_IMAGE):$(COMMIT) \
 		MQTT_GATEWAY_IMAGE=$(DOCKER_REGISTRY)/$(DOCKER_ORG)/$(MQTT_GATEWAY_IMAGE):$(COMMIT) \
 		MQTT_LWT_IMAGE=$(DOCKER_REGISTRY)/$(DOCKER_ORG)/$(MQTT_LWT_IMAGE):$(COMMIT) \
-		envsubst '$${STANDARD_CONTROLLER_IMAGE},$${ROUTER_IMAGE},$${TOPIC_FORWARDER_IMAGE},$${BROKER_IMAGE},$${ROUTER_METRICS_IMAGE},$${SUBSERV_IMAGE},$${SERVICE_BROKER_IMAGE},$${AGENT_IMAGE},$${MQTT_GATEWAY_IMAGE},$${MQTT_LWT_IMAGE}' > install/resources/address-space-controller/address-space-definitions.yaml
+		python -c 'import sys, os; print(os.path.expandvars(sys.stdin.read()))' > install/resources/address-space-controller/address-space-definitions.yaml
+		#envsubst '$${STANDARD_CONTROLLER_IMAGE},$${ROUTER_IMAGE},$${TOPIC_FORWARDER_IMAGE},$${BROKER_IMAGE},$${ROUTER_METRICS_IMAGE},$${SUBSERV_IMAGE},$${SERVICE_BROKER_IMAGE},$${AGENT_IMAGE},$${MQTT_GATEWAY_IMAGE},$${MQTT_LWT_IMAGE}' > install/resources/address-space-controller/address-space-definitions.yaml
 	cp -f include/resource-definitions.yaml install/resources/resource-definitions
 	cp -f include/cluster-roles/*.yaml install/resources/cluster-roles
 	cp -f include/*-plans.yaml install/resources/plans/
