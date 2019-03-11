@@ -57,6 +57,7 @@
     "webpack-merge": "^4.1.4"
   },
   "dependencies": {
-    "@patternfly/patternfly": "^1.0.219"
+    "@patternfly/patternfly": "^1.0.219",
+    "@zalando/oauth2-client-js": "^0.0.18"
   }
 }
