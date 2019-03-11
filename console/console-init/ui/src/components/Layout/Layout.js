@@ -145,7 +145,7 @@ class Layout extends React.Component {
               position="right"
               onSelect={this.onDropdownSelect}
               isOpen={isDropdownOpen}
-              toggle={<DropdownToggle onToggle={this.onDropdownToggle}>Developer</DropdownToggle>}
+              toggle={<DropdownToggle onToggle={this.onDropdownToggle}>{this.props.user}</DropdownToggle>}
               dropdownItems={userDropdownItems}
             />
           </ToolbarItem>

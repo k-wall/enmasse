@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!--
 
-     Copyright 2005-2016 Red Hat, Inc.
+     Copyright 2019 Red Hat, Inc.
 
      Red Hat licenses this file to you under the Apache License, version
      2.0 (the "License"); you may not use this file except in compliance
@@ -27,28 +27,13 @@
     <includeBaseDirectory>False</includeBaseDirectory>
     <fileSets>
         <fileSet>
-           <directory>${project.basedir}/</directory>
-            <outputDirectory>/</outputDirectory>
+            <directory>${project.basedir}/httpd-cfg</directory>
+            <outputDirectory>/etc/httpd/conf</outputDirectory>
             <includes>
-                <include>ui/dist/**</include>
-            </includes>
-           <fileMode>0644</fileMode>
-        </fileSet>
-        <fileSet>
-           <directory>${project.basedir}/cmd</directory>
-           <outputDirectory>cmd</outputDirectory>
-           <includes>
-              <include>**</include>
-           </includes>
-           <fileMode>0755</fileMode>
-        </fileSet>
-        <fileSet>
-            <directory>${project.basedir}</directory>
-            <outputDirectory>/</outputDirectory>
-            <includes>
-                <include>go.*</include>
+                <include>**</include>
             </includes>
             <fileMode>0644</fileMode>
         </fileSet>
     </fileSets>
+
 </assembly>

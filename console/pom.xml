@@ -10,72 +10,10 @@
   <modelVersion>4.0.0</modelVersion>
   <groupId>io.enmasse</groupId>
   <artifactId>console</artifactId>
-  <properties>
-    <console-node-install-directory>${project.build.directory}/build</console-node-install-directory>
-    <console-ui-directory>${project.basedir}/ui</console-ui-directory>
-  </properties>
-  <build>
-    <plugins>
-      <plugin>
-        <groupId>com.github.eirslett</groupId>
-        <artifactId>frontend-maven-plugin</artifactId>
-        <executions>
-          <execution>
-            <id>install npm - console</id>
-            <goals>
-              <goal>install-node-and-npm</goal>
-            </goals>
-            <configuration>
-              <nodeVersion>${node.version}</nodeVersion>
-              <npmVersion>${npm.version}</npmVersion>
-              <workingDirectory>ui</workingDirectory>
-              <installDirectory>${console-node-install-directory}</installDirectory>
-            </configuration>
-          </execution>
-          <execution>
-            <id>npm install - console</id>
-            <goals>
-              <goal>npm</goal>
-            </goals>
-            <phase>process-resources</phase>
-            <configuration>
-              <workingDirectory>${console-node-install-directory}</workingDirectory>
-              <arguments>install -C ${console-ui-directory}</arguments>
-            </configuration>
-          </execution>
-          <execution>
-            <id>npm build - console</id>
-            <goals>
-              <goal>npm</goal>
-            </goals>
-            <phase>process-resources</phase>
-            <configuration>
-              <workingDirectory>${console-node-install-directory}</workingDirectory>
-              <arguments>run-script build -C ${console-ui-directory}</arguments>
-            </configuration>
-          </execution>
-        </executions>
-      </plugin>
-      <plugin>
-        <groupId>org.apache.maven.plugins</groupId>
-        <artifactId>maven-assembly-plugin</artifactId>
-        <executions>
-          <execution>
-            <id>dist</id>
-            <phase>package</phase>
-            <goals>
-              <goal>single</goal>
-            </goals>
-            <configuration>
-              <ignoreMissingDescriptor>false</ignoreMissingDescriptor>
-              <descriptors>
-                <descriptor>src/assembly/unix-dist.xml</descriptor>
-              </descriptors>
-              <tarLongFileMode>gnu</tarLongFileMode>
-            </configuration>
-          </execution>
-        </executions>
-      </plugin>
-    </plugins>
-  </build>
+  <packaging>pom</packaging>
+
+  <modules>
+    <module>console-init</module>
+    <module>console-httpd</module>
+  </modules>
 </project>

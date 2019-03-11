@@ -6,8 +6,6 @@ package authenticationservice
 
 import (
 	"context"
-	adminv1beta1 "github.com/enmasseproject/enmasse/pkg/apis/admin/v1beta1"
-	"github.com/enmasseproject/enmasse/pkg/util/install"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -19,19 +17,19 @@ import (
 
 type ApplySecretFn func(secret *corev1.Secret) error
 
-func CreateAuthserviceSecret(ctx context.Context, client client.Client, scheme *runtime.Scheme, secretName string, authservice *adminv1beta1.AuthenticationService, applyfn ApplySecretFn) error {
+// Move me // try 	owner.GetNamespace()
+func CreateAuthserviceSecret(ctx context.Context, client client.Client, scheme *runtime.Scheme, namespace string, secretName string, owner metav1.Object, applyfn ApplySecretFn) error {
 	secret := &corev1.Secret{}
-	err := client.Get(ctx, types.NamespacedName{Namespace: authservice.Namespace, Name: secretName}, secret)
+	err := client.Get(ctx, types.NamespacedName{Namespace: namespace, Name: secretName}, secret)
 	if err != nil && errors.IsNotFound(err) {
-		secret.ObjectMeta = metav1.ObjectMeta{Namespace: authservice.Namespace, Name: secretName}
-		install.ApplyDefaultLabels(&secret.ObjectMeta, "standard-authservice", secretName)
+		secret.ObjectMeta = metav1.ObjectMeta{Namespace: namespace, Name: secretName}
 
 		err := applyfn(secret)
 		if err != nil {
 			return err
 		}
 
-		if err := controllerutil.SetControllerReference(authservice, secret, scheme); err != nil {
+		if err := controllerutil.SetControllerReference(owner, secret, scheme); err != nil {
 			return err
 		}
 		err = client.Create(ctx, secret)

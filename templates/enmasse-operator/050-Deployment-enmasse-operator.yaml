@@ -73,6 +73,8 @@ spec:
           value: ${KEYCLOAK_IMAGE}
         - name: KEYCLOAK_PLUGIN_IMAGE
           value: ${KEYCLOAK_PLUGIN_IMAGE}
+        - name: CONTROLLER_ENABLE_CONSOLE_SERVICE
+          value: "true"
         resources:
           limits:
             memory: 128Mi
