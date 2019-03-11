@@ -51,6 +51,8 @@ spec:
           value: "true"
         - name: CONTROLLER_ENABLE_AUTHENTICATION_SERVICE
           value: "true"
+        - name: CONTROLLER_ENABLE_CONSOLE_SERVICE
+          value: "true"
         resources:
           limits:
             memory: 128Mi
