@@ -39,19 +39,6 @@ module.exports = {
       {
         test: /\.(jpe?g|svg|png|gif)$/i,
         use: [{ loader: 'url-loader', options: { limit: 10000, outputPath: 'images' } }, 'img-loader']
-      },
-      {
-        test: /\.svg$/,
-        exclude: [/\.inline\.svg$/],
-        use: {
-          loader: 'svg-url-loader',
-          options: {}
-        },
-        include: function (input) {
-          // only process modules with this loader
-          // if they live under an 'images' directory
-          return input.indexOf('images') > -1;
-        }
       }
     ]
   },
