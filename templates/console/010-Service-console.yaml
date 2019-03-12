@@ -1,0 +1,13 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: console
+  labels:
+    app: enmasse
+spec:
+  ports:
+  - name: web
+    port: 80
+    targetPort: 8080
+  selector:
+    name: console

@@ -31,6 +31,7 @@ MODULES=\
 	service-monitors \
 	prometheus-rules \
 	csv \
+	console \
 
 prepare:
 	mkdir -p $(PACKAGE_INSTALL_DIR)
@@ -46,7 +47,7 @@ replace_images: prepare
 		cp -r $$i $(BUILDDIR)/replaced/$$D/ ; \
 	done
 	for i in `find $(BUILDDIR)/replaced -name "*.yaml"`; do \
-		cat $$i | $(IMAGE_ENV) envsubst '$${MAVEN_VERSION},$${ENMASSE_VERSION},$${IMAGE_PULL_POLICY},$${ADDRESS_SPACE_CONTROLLER_IMAGE},$${STANDARD_CONTROLLER_IMAGE},$${ROUTER_IMAGE},$${NONE_AUTHSERVICE_IMAGE},$${KEYCLOAK_IMAGE},$${KEYCLOAK_CONTROLLER_IMAGE},$${KEYCLOAK_PLUGIN_IMAGE},$${TOPIC_FORWARDER_IMAGE},$${ARTEMIS_IMAGE},$${ARTEMIS_PLUGIN_IMAGE},$${SUBSERV_IMAGE},$${API_SERVER_IMAGE},$${SERVICE_BROKER_IMAGE},$${AGENT_IMAGE},$${MQTT_GATEWAY_IMAGE},$${MQTT_LWT_IMAGE},$${PROMETHEUS_IMAGE},$${ALERTMANAGER_IMAGE},$${GRAFANA_IMAGE},$${KUBE_STATE_METRICS_IMAGE},$${OAUTH_PROXY_IMAGE},$${HONO_IMAGE},$${ENMASSE_CONTROLLER_MANAGER_IMAGE}' > $$i.tmp; \
+		cat $$i | $(IMAGE_ENV) envsubst '$${MAVEN_VERSION},$${ENMASSE_VERSION},$${IMAGE_PULL_POLICY},$${ADDRESS_SPACE_CONTROLLER_IMAGE},$${STANDARD_CONTROLLER_IMAGE},$${ROUTER_IMAGE},$${NONE_AUTHSERVICE_IMAGE},$${KEYCLOAK_IMAGE},$${KEYCLOAK_CONTROLLER_IMAGE},$${KEYCLOAK_PLUGIN_IMAGE},$${TOPIC_FORWARDER_IMAGE},$${ARTEMIS_IMAGE},$${ARTEMIS_PLUGIN_IMAGE},$${SUBSERV_IMAGE},$${API_SERVER_IMAGE},$${SERVICE_BROKER_IMAGE},$${AGENT_IMAGE},$${MQTT_GATEWAY_IMAGE},$${MQTT_LWT_IMAGE},$${PROMETHEUS_IMAGE},$${ALERTMANAGER_IMAGE},$${GRAFANA_IMAGE},$${KUBE_STATE_METRICS_IMAGE},$${OAUTH_PROXY_IMAGE},$${HONO_IMAGE},$${ENMASSE_CONTROLLER_MANAGER_IMAGE},$${CONSOLE_IMAGE}' > $$i.tmp; \
 		mv $$i.tmp $$i; \
 	done
 
@@ -94,6 +95,17 @@ $(IOT_BUNDLE): replace_images
 		mv $$i.tmp $$i; \
 	done
 
+CONSOLE_BUNDLE=$(PACKAGE_INSTALL_DIR)/preview-bundles/console
+$(CONSOLE_BUNDLE): replace_images
+	mkdir -p $(CONSOLE_BUNDLE)
+	for i in console; do \
+		cp $(BUILDDIR)/replaced/$$i/*.yaml $(CONSOLE_BUNDLE)/; \
+	done
+	for i in `find $(CONSOLE_BUNDLE) -name "*.yaml"`; do \
+		cat $$i | $(IMAGE_ENV) NAMESPACE=$(DEFAULT_PROJECT) envsubst '$${NAMESPACE},$${IMAGE_PULL_POLICY},$${CONSOLE_IMAGE}' > $$i.tmp; \
+		mv $$i.tmp $$i; \
+	done
+
 OLM=$(PACKAGE_INSTALL_DIR)/olm/enmasse
 $(OLM): replace_images
 	mkdir -p $(OLM)
@@ -101,7 +113,7 @@ $(OLM): replace_images
 		cp $(BUILDDIR)/replaced/$$i/*.yaml $(OLM)/; \
 	done
 
-install: ansible_install component_install $(ENMASSE_BUNDLE) $(MONITORING_BUNDLE) $(IOT_BUNDLE) $(OLM)
+install: ansible_install component_install $(ENMASSE_BUNDLE) $(MONITORING_BUNDLE) $(IOT_BUNDLE) $(CONSOLE_BUNDLE) $(OLM)
 	cp -r $(PACKAGE_DOCS_DIR) $(INSTALLDIR)/docs
 
 package: prepare install
@@ -109,4 +121,4 @@ package: prepare install
 
 coverage:
 
-.PHONY: prepare package clean $(ENMASSE_BUNDLE) $(MONITORING_BUNDLE) $(IOT_BUNDLE) $(OLM)
+.PHONY: prepare package clean $(ENMASSE_BUNDLE) $(MONITORING_BUNDLE) $(IOT_BUNDLE) $(CONSOLE_BUNDLE) $(OLM)

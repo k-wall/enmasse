@@ -1,0 +1,39 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    app: enmasse
+  name: console
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: enmasse
+      name: console
+  template:
+    metadata:
+      labels:
+        app: enmasse
+        name: console
+    spec:
+      affinity:
+        nodeAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 1
+              preference:
+                matchExpressions:
+                  - key: node-role.enmasse.io/operator-infra
+                    operator: In
+                    values:
+                      - "true"
+      containers:
+      - env:
+        image: ${CONSOLE_IMAGE}
+        imagePullPolicy: ${IMAGE_PULL_POLICY}
+        name: console
+        resources:
+          limits:
+            memory: 512Mi
+          requests:
+            memory: 512Mi
+      serviceAccountName: console
