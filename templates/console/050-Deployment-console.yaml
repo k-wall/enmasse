@@ -9,12 +9,12 @@ spec:
   selector:
     matchLabels:
       app: enmasse
-      name: console
+      name: global-console
   template:
     metadata:
       labels:
         app: enmasse
-        name: console
+        name: global-console
     spec:
       affinity:
         nodeAffinity:
@@ -28,6 +28,10 @@ spec:
                       - "true"
       containers:
       - env:
+        - name: OAUTH_CLIENT_ID
+          value: console
+        - name: OPENID_CONNECT_DISCOVERY_URI
+          value: https://openshift.default.svc/.well-known/oauth-authorization-server
         image: ${CONSOLE_IMAGE}
         imagePullPolicy: ${IMAGE_PULL_POLICY}
         name: console

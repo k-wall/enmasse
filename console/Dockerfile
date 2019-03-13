@@ -19,8 +19,10 @@ ADD target/console-${MAVEN_VERSION}-dist.tar.gz /opt/console/go/src/github.com/e
 
 RUN GO111MODULE=on go mod vendor
 
+RUN go build -o main cmd/main.go
+
 EXPOSE 8080
 
-CMD ["go", "run", "/opt/console/go/src/github.com/enmasseproject/enmasse/console/cmd/main.go"]
+CMD ["/opt/console/go/src/github.com/enmasseproject/enmasse/console/main"]
 
 
