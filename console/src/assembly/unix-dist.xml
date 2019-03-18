@@ -27,13 +27,24 @@
     <includeBaseDirectory>False</includeBaseDirectory>
     <fileSets>
         <fileSet>
-           <directory>${project.basedir}/</directory>
-            <outputDirectory>/</outputDirectory>
+           <directory>${project.basedir}/ui/dist</directory>
+            <outputDirectory>/var/www/html</outputDirectory>
             <includes>
-                <include>ui/dist/**</include>
+                <include>**</include>
             </includes>
            <fileMode>0644</fileMode>
         </fileSet>
+<!--
+        <fileSet>
+           <directory>${project.basedir}/httpd-cfg</directory>
+            <outputDirectory>/etc/httpd/conf</outputDirectory>
+            <includes>
+                <include>**</include>
+            </includes>
+           <fileMode>0644</fileMode>
+        </fileSet>
+-->
+<!--
         <fileSet>
            <directory>${project.basedir}/cmd</directory>
            <outputDirectory>cmd</outputDirectory>
@@ -50,5 +61,7 @@
             </includes>
             <fileMode>0644</fileMode>
         </fileSet>
+-->
     </fileSets>
+
 </assembly>

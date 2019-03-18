@@ -4,5 +4,5 @@ metadata:
  name: console
 secret: consolesecret
 redirectURIs:
- - "http://localhost:9000/" 
+ - "https://console-enmasse-infra.192.168.64.17.nip.io/"
 grantMethod: auto

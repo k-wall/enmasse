@@ -10,3 +10,5 @@ spec:
   to:
     kind: Service
     name: console
+  tls:
+    termination: Reencrypt
