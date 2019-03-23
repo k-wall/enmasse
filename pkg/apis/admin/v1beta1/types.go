@@ -8,7 +8,7 @@ package v1beta1
 import (
 	enmassev1beta1 "github.com/enmasseproject/enmasse/pkg/apis/enmasse/v1beta1"
 	corev1 "k8s.io/api/core/v1"
-	resource "k8s.io/apimachinery/pkg/api/resource"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
@@ -113,3 +113,37 @@ type AuthenticationServiceList struct {
 
 	Items []AuthenticationService `json:"items"`
 }
+
+// ** ConsoleService
+
+// +genclient
+// +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
+
+type ConsoleService struct {
+	metav1.TypeMeta   `json:",inline"`
+	metav1.ObjectMeta `json:"metadata,omitempty"`
+	Spec              ConsoleServiceSpec `json:"spec"`
+}
+
+type ConsoleServiceSpec struct {
+	DiscoveryMetadataURL *string                  `json:"discoveryMetadataURL,omitempty"`
+	OauthClientName      *string                  `json:"oauthClientName,omitempty"`
+	Scope                *string                  `json:"scope,omitempty"`
+	OauthClientSecret    *corev1.SecretReference  `json:"oauthClientSecret,omitempty"`
+	CertificateSecret    *corev1.SecretReference  `json:"certificateSecret,omitempty"`
+	RouteName            *string                  `json:"routeName,omitempty"`
+	ServiceName          *string                  `json:"serviceName,omitempty"`
+	DeploymentName       *string                  `json:"deploymentName,omitempty"`
+	ServiceAccountName   *string                  `json:"serviceAccountName,omitempty"`
+}
+
+// +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
+
+type ConsoleServiceList struct {
+	metav1.TypeMeta `json:",inline"`
+	metav1.ListMeta `json:"metadata,omitempty"`
+
+	Items []ConsoleService `json:"items"`
+}
+
+
