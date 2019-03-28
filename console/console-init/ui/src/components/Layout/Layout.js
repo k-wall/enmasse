@@ -8,8 +8,6 @@ import {
   Dropdown,
   DropdownToggle,
   DropdownItem,
-  DropdownSeparator,
-  KebabToggle,
   Nav,
   NavItem,
   NavList,
@@ -19,13 +17,11 @@ import {
   PageSection,
   PageSectionVariants,
   TextContent,
-  Text,
   Toolbar,
   ToolbarGroup,
   ToolbarItem
 } from '@patternfly/react-core';
 import accessibleStyles from '@patternfly/patternfly/utilities/Accessibility/accessibility.css';
-import spacingStyles from '@patternfly/patternfly/utilities/Spacing/spacing.css';
 import { css } from '@patternfly/react-styles';
 import { BellIcon, CogIcon } from '@patternfly/react-icons';
 
@@ -36,6 +32,10 @@ import smImage from '../../assets/images/pfbg_768.jpg';
 import sm2xImage from '../../assets/images/pfbg_768@2x.jpg';
 import lgImage from '../../assets/images/pfbg_1200.jpg';
 import filter from '../../assets/images/background-filter.svg';
+
+import './Layout.css';
+
+
 
 class Layout extends React.Component {
   constructor(props) {
@@ -77,42 +77,34 @@ class Layout extends React.Component {
     });
   };
 
+  convertCamelCaseToTitle(text) {
+    var result = text.replace( /([A-Z])/g, " $1" );
+    return result.charAt(0).toUpperCase() + result.slice(1);
+  }
+
   render() {
-    const { isDropdownOpen, isKebabDropdownOpen, activeItem } = this.state;
+    const { isDropdownOpen, activeItem } = this.state;
+
+    var style = {
+      textAlign: 'center',
+    };
+
+    const navItems = Object.keys(this.props.instanceTypes)
+      .map((key, i )=> {
+          return <NavItem to={"#nav-link"+i} key={i} itemId={i} isActive={activeItem === i}>
+            <div style={style}>{this.props.instanceTypes[key]}<br/>{this.convertCamelCaseToTitle(key)}</div>
+          </NavItem>
+        });
 
     const PageNav = (
       <Nav onSelect={this.onNavSelect} aria-label="Nav">
         <NavList variant={NavVariants.horizontal}>
-          <NavItem to="#nav-link1" itemId={0} isActive={activeItem === 0}>
-            Total Instances
-          </NavItem>
-          <NavItem to="#nav-link2" itemId={1} isActive={activeItem === 1}>
-            Standard Address Spaces
-          </NavItem>
-          <NavItem to="#nav-link3" itemId={2} isActive={activeItem === 2}>
-            Brokered Address Spaces
-          </NavItem>
+          {navItems}
         </NavList>
       </Nav>
     );
-    const kebabDropdownItems = [
-      <DropdownItem>
-        <BellIcon /> Notifications
-      </DropdownItem>,
-      <DropdownItem>
-        <CogIcon /> Settings
-      </DropdownItem>
-    ];
     const userDropdownItems = [
-      <DropdownItem>Link</DropdownItem>,
-      <DropdownItem component="button">Action</DropdownItem>,
-      <DropdownItem isDisabled>Disabled Link</DropdownItem>,
-      <DropdownItem isDisabled component="button">
-        Disabled Action
-      </DropdownItem>,
-      <DropdownSeparator />,
-      <DropdownItem>Separated Link</DropdownItem>,
-      <DropdownItem component="button">Separated Action</DropdownItem>
+      <DropdownItem isDisabled>Logout</DropdownItem>
     ];
     const PageToolbar = (
       <Toolbar>
@@ -129,16 +121,6 @@ class Layout extends React.Component {
           </ToolbarItem>
         </ToolbarGroup>
         <ToolbarGroup>
-          <ToolbarItem className={css(accessibleStyles.hiddenOnLg, spacingStyles.mr_0)}>
-            <Dropdown
-              isPlain
-              position="right"
-              onSelect={this.onKebabDropdownSelect}
-              toggle={<KebabToggle onToggle={this.onKebabDropdownToggle} />}
-              isOpen={isKebabDropdownOpen}
-              dropdownItems={kebabDropdownItems}
-            />
-          </ToolbarItem>
           <ToolbarItem className={css(accessibleStyles.screenReader, accessibleStyles.visibleOnMd)}>
             <Dropdown
               isPlain
@@ -164,10 +146,9 @@ class Layout extends React.Component {
 
     const Header = (
       <PageHeader
-        logo={"Console"}
+        logo={"AMQ Console"}
         toolbar={PageToolbar}
         avatar={<Avatar src={avatarImg} alt="Avatar image" />}
-        topNav={PageNav}
       />
     );
 
@@ -177,11 +158,13 @@ class Layout extends React.Component {
       <React.Fragment>
         <BackgroundImage src={bgImages} />
         <Page header={Header}>
+          <PageSection variant={PageSectionVariants.darker} className='navSection'>{PageNav}</PageSection>
           <PageSection variant={PageSectionVariants.light}>
             <TextContent>
-              <Text component="h1">Enmasse Console</Text>
+              {this.props.children}
             </TextContent>
           </PageSection>
+
         </Page>
       </React.Fragment>
     );

@@ -58,6 +58,9 @@
   },
   "dependencies": {
     "@patternfly/patternfly": "^1.0.219",
-    "@zalando/oauth2-client-js": "^0.0.18"
+    "@patternfly/react-table": "^1.3.4",
+    "@zalando/oauth2-client-js": "^0.0.18",
+    "axios": "^0.18.0",
+    "moment": "^2.24.0"
   }
 }

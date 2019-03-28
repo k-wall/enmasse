@@ -1,20 +1,13 @@
 import React, {Component} from 'react';
 import './app.css';
-import Layout from "../components/Layout/Layout"
-import User from "../components/User";
-
-const user = <User/>;
+import Console from '../containers/Console/Console'
 
 export default class App extends Component {
 
-
   render() {
     console.log('[App.js] Inside render()');
-
     return (
-      <div >
-        <Layout user={user}/>
-      </div>
+      <Console />
     );
   }
 
