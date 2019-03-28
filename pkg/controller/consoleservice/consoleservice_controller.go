@@ -38,7 +38,6 @@ TODO kubernetes path
 TODO refactor CRD to organise fields for the openshift/kubernetes in a more cohesive way
 TODO Handle the case of many ingress points (Openshift)
 TODO TLS for the HTTPD side car
-TODO Health endpoints
 TODO Tidy up (minimise) Apache HTTPD conf
 TODO Expose console endpoint to the user (as a dynamic field in the CRD?)
 TODO Tidy up this code - extract utility methods
@@ -64,7 +63,7 @@ func add(mgr manager.Manager, r *ReconcileConsoleService) error {
 		return err
 	}
 
-	// Watch for changes to primary resource AuthenticationService
+	// Watch for changes to primary resource ConsoleService
 	err = c.Watch(&source.Kind{Type: &v1beta1.ConsoleService{}}, &handler.EnqueueRequestForObject{})
 	if err != nil {
 		return err
@@ -85,6 +84,9 @@ func add(mgr manager.Manager, r *ReconcileConsoleService) error {
 	if err != nil {
 		return err
 	}
+
+	// TODO We need to watch routes, so we can adjust the redirects of the oauthclient
+	// TODO We need to watch oauthclient, so we can adjust the secret cached in the secret.
 
 	return nil
 }
@@ -197,13 +199,18 @@ func applyConsoleServiceDefaults(ctx context.Context, client client.Client, sche
 		}
 
 		if consoleservice.Spec.Scope == nil {
-			full := "user:full"
-			consoleservice.Spec.Scope = &full
+			scope := "user:full"
+			consoleservice.Spec.Scope = &scope
 		}
 
 		if (consoleservice.Spec.OauthClientSecret == nil) {
 			secretName := consoleservice.Name + "-oauth"
 			consoleservice.Spec.OauthClientSecret = &corev1.SecretReference{Name: secretName}
+		}
+	} else {
+		if consoleservice.Spec.Scope == nil {
+			scope := "openid"
+			consoleservice.Spec.Scope = &scope
 		}
 	}
 
@@ -347,6 +354,12 @@ func applyDeployment(consoleservice *v1beta1.ConsoleService, deployment *appsv1.
 			})
 		}
 
+		if consoleservice.Spec.DiscoveryMetadataURL != nil {
+			install.ApplyEnv(container, "DISCOVERY_METADATA_URL", func(envvar *corev1.EnvVar) {
+				envvar.Value = *consoleservice.Spec.DiscoveryMetadataURL;
+			})
+		}
+
 		container.Command = []string{"/oauth-proxy/bin/init.sh", "/apps/"}
 		install.ApplyVolumeMountSimple(container, "apps", "/apps", false);
 	})
@@ -371,27 +384,26 @@ func applyDeployment(consoleservice *v1beta1.ConsoleService, deployment *appsv1.
 				Name:          "https",
 			}}
 
-			// TODO
-			//container.ReadinessProbe = &corev1.Probe{
-			//	InitialDelaySeconds: 60,
-			//	Handler: corev1.Handler{
-			//		HTTPGet: &corev1.HTTPGetAction{
-			//			Port:   intstr.FromString("https"),
-			//			Path:   "/oauth/healthz",
-			//			Scheme: "HTTPS",
-			//		},
-			//	},
-			//}
-			//container.LivenessProbe = &corev1.Probe{
-			//	InitialDelaySeconds: 120,
-			//	Handler: corev1.Handler{
-			//		HTTPGet: &corev1.HTTPGetAction{
-			//			Port:   intstr.FromString("https"),
-			//			Path:   "/oauth/healthz",
-			//			Scheme: "HTTPS",
-			//		},
-			//	},
-			//}
+			container.ReadinessProbe = &corev1.Probe{
+				InitialDelaySeconds: 60,
+				Handler: corev1.Handler{
+					HTTPGet: &corev1.HTTPGetAction{
+						Port:   intstr.FromString("https"),
+						Path:   "/oauth/healthz",
+						Scheme: "HTTPS",
+					},
+				},
+			}
+			container.LivenessProbe = &corev1.Probe{
+				InitialDelaySeconds: 120,
+				Handler: corev1.Handler{
+					HTTPGet: &corev1.HTTPGetAction{
+						Port:   intstr.FromString("https"),
+						Path:   "/oauth/healthz",
+						Scheme: "HTTPS",
+					},
+				},
+			}
 		})
 
 		install.ApplyContainer(deployment, "console-httpd", func(container *corev1.Container) {
@@ -399,32 +411,59 @@ func applyDeployment(consoleservice *v1beta1.ConsoleService, deployment *appsv1.
 
 			container.Ports = []corev1.ContainerPort{{
 				ContainerPort: 8080,
-				Name:          "https",
+				Name:          "http",
 			}}
-			// TODO
-			//container.ReadinessProbe = &corev1.Probe{
-			//	InitialDelaySeconds: 60,
-			//	Handler: corev1.Handler{
-			//		HTTPGet: &corev1.HTTPGetAction{
-			//			Port:   intstr.FromString("http"),
-			//			Path:   "/auth",
-			//			Scheme: "HTTP",
-			//		},
-			//	},
-			//}
-			//container.LivenessProbe = &corev1.Probe{
-			//	InitialDelaySeconds: 120,
-			//	Handler: corev1.Handler{
-			//		HTTPGet: &corev1.HTTPGetAction{
-			//			Port:   intstr.FromString("http"),
-			//			Path:   "/auth",
-			//			Scheme: "HTTP",
-			//		},
-			//	},
-			//}
+
+			// Can't define a probe as HTTPD bound to loopback.  Perhaps have oauth-proxy's probes reach through
+			// HTTP and hit whoami?
+
 		})
 	} else {
-		// TODO Kubernetes
+		install.ApplyContainer(deployment, "console-proxy", func(container *corev1.Container) {
+			install.ApplyContainerImage(container, "console-proxy-kubernetes", nil)
+
+			container.Args = []string{"-config=/apps/cfg/oauth-proxy-console-proxy-kubernetes.cfg"}
+
+			install.ApplyVolumeMountSimple(container, "apps", "/apps", false);
+			install.ApplyVolumeMountSimple(container, "console-tls", "/etc/tls/private", true);
+
+			if consoleservice.Spec.OauthClientSecret != nil {
+				install.ApplyEnvSecret(container, "OAUTH2_PROXY_CLIENT_ID", "client-id", consoleservice.Spec.OauthClientSecret.Name)
+				install.ApplyEnvSecret(container, "OAUTH2_PROXY_CLIENT_SECRET", "client-secret", consoleservice.Spec.OauthClientSecret.Name)
+			}
+
+			if consoleservice.Spec.Scope != nil {
+				install.ApplyEnv(container, "SSL_CERT_DIR", func(envvar *corev1.EnvVar) {
+					envvar.Value = "/var/run/secrets/kubernetes.io/serviceaccount/";
+				})
+			}
+
+			container.Ports = []corev1.ContainerPort{{
+				ContainerPort: 8443,
+				Name:          "https",
+			}}
+
+			container.ReadinessProbe = &corev1.Probe{
+				InitialDelaySeconds: 60,
+				Handler: corev1.Handler{
+					HTTPGet: &corev1.HTTPGetAction{
+						Port:   intstr.FromString("https"),
+						Path:   "/oauth/healthz",
+						Scheme: "HTTPS",
+					},
+				},
+			}
+			container.LivenessProbe = &corev1.Probe{
+				InitialDelaySeconds: 120,
+				Handler: corev1.Handler{
+					HTTPGet: &corev1.HTTPGetAction{
+						Port:   intstr.FromString("https"),
+						Path:   "/oauth/healthz",
+						Scheme: "HTTPS",
+					},
+				},
+			}
+		})
 	}
 
 	deployment.Spec.Template.Spec.ServiceAccountName = *consoleservice.Spec.ServiceAccountName
@@ -457,36 +496,38 @@ func (r *ReconcileConsoleService) reconcileOauthClient(ctx context.Context, cons
 		if len(route.Status.Ingress) == 0 {
 			return reconcile.Result{}, nil
 		}
-		// TODO list of urls rather than the first, don't assume protocol.
-		redirectUrl := "https://" + route.Status.Ingress[0].Host
+
+		redirects := make([]string, len(route.Status.Ingress))
+
+		scheme := "http"
+		if route.Spec.TLS != nil {
+			scheme = "https"
+		}
+		for i, element := range route.Status.Ingress {
+			redirects[i] = fmt.Sprintf("%s://%s", scheme, element.Host )
+		}
 
 		var oauthname = *consoleservice.Spec.OauthClientName
-		oauth := &oauthv1.OAuthClient{}
-		err = r.client.Get(ctx, types.NamespacedName{Name: oauthname}, oauth)
+		oauth := &oauthv1.OAuthClient{
+			ObjectMeta: metav1.ObjectMeta{Name: oauthname},
+
+		}
+
+		_, err = controllerutil.CreateOrUpdate(ctx, r.client, oauth, func(existing runtime.Object) error {
+			existingOauth := existing.(*oauthv1.OAuthClient)
+
+			applyOauthClient(consoleservice, existingOauth, redirects)
+
+			//if err := controllerutil.SetControllerReference(consoleservice, existingOauth, r.scheme); err != nil {
+			//	return err
+			//}
+
+			return nil
+		})
 
 		if err != nil {
-			log.Info("KWDEBUG Get oauth fail err", "err", err)
-			if k8errors.IsNotFound(err) {
-				oauth.ObjectMeta = metav1.ObjectMeta{Name: oauthname}
-				applyOauthClient(consoleservice, oauth, redirectUrl)
-				err := r.client.Create(ctx, oauth)
-				if err != nil && !k8errors.IsNotFound(err) {
-					log.Info("Failed to create", "err", err)
-
-					log.Error(err, "Error creating oauth client, ignoring")
-					return reconcile.Result{}, nil
-				}
-			} else {
-				log.Error(err, "Error getting oauth client, ignoring")
-				return reconcile.Result{}, nil
-			}
-		} else {
-			applyOauthClient(consoleservice, oauth, redirectUrl)
-			err := r.client.Update(ctx, oauth)
-			if err != nil  {
-				log.Error(err, "Error updating oauth client, ignoring")
-				return reconcile.Result{}, nil
-			}
+			log.Error(err, "Failed reconciling OAuth")
+			return reconcile.Result{}, err
 		}
 
 		secretref := consoleservice.Spec.OauthClientSecret
@@ -529,7 +570,7 @@ func (r *ReconcileConsoleService) reconcileOauthClient(ctx context.Context, cons
 }
 
 
-func applyOauthClient(consoleservice *v1beta1.ConsoleService, oauth *oauthv1.OAuthClient, redirectUri string) error {
+func applyOauthClient(consoleservice *v1beta1.ConsoleService, oauth *oauthv1.OAuthClient, redirects []string) error {
 	install.ApplyDefaultLabels(&oauth.ObjectMeta, "oauthclient", oauth.Name)
 	if oauth.Secret == "" {
 		password, err := util.GeneratePassword(32)
@@ -539,9 +580,7 @@ func applyOauthClient(consoleservice *v1beta1.ConsoleService, oauth *oauthv1.OAu
 		oauth.Secret = password
 	}
 	oauth.GrantMethod = oauthv1.GrantHandlerAuto
-	oauth.RedirectURIs = []string{
-		redirectUri,
-	}
+	oauth.RedirectURIs = redirects;
 	return nil
 }
 
