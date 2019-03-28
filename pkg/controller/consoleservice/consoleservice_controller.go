@@ -203,9 +203,16 @@ func applyConsoleServiceDefaults(ctx context.Context, client client.Client, sche
 			consoleservice.Spec.Scope = &scope
 		}
 
-		if (consoleservice.Spec.OauthClientSecret == nil) {
+		if consoleservice.Spec.OauthClientSecret == nil {
 			secretName := consoleservice.Name + "-oauth"
 			consoleservice.Spec.OauthClientSecret = &corev1.SecretReference{Name: secretName}
+		}
+
+		if consoleservice.Spec.DiscoveryMetadataURL == nil {
+			s := "https://openshift.default.svc/.well-known/oauth-authorization-server"
+			consoleservice.Spec.DiscoveryMetadataURL = &s
+
+			// TODO workaround oc cluster up without public ip
 		}
 	} else {
 		if consoleservice.Spec.Scope == nil {
@@ -422,10 +429,12 @@ func applyDeployment(consoleservice *v1beta1.ConsoleService, deployment *appsv1.
 		install.ApplyContainer(deployment, "console-proxy", func(container *corev1.Container) {
 			install.ApplyContainerImage(container, "console-proxy-kubernetes", nil)
 
-			container.Args = []string{"-config=/apps/cfg/oauth-proxy-console-proxy-kubernetes.cfg"}
+			container.Args = []string{"-config=/apps/cfg/oauth-proxy-kubernetes.cfg"}
 
 			install.ApplyVolumeMountSimple(container, "apps", "/apps", false);
 			install.ApplyVolumeMountSimple(container, "console-tls", "/etc/tls/private", true);
+
+			log.Info("KWDEBUG ", "secret", consoleservice.Spec.OauthClientSecret)
 
 			if consoleservice.Spec.OauthClientSecret != nil {
 				install.ApplyEnvSecret(container, "OAUTH2_PROXY_CLIENT_ID", "client-id", consoleservice.Spec.OauthClientSecret.Name)
