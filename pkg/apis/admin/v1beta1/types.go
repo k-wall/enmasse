@@ -127,7 +127,6 @@ type ConsoleService struct {
 
 type ConsoleServiceSpec struct {
 	DiscoveryMetadataURL *string                  `json:"discoveryMetadataURL,omitempty"`
-	OauthClientName      *string                  `json:"oauthClientName,omitempty"`
 	Scope                *string                  `json:"scope,omitempty"`
 	OauthClientSecret    *corev1.SecretReference  `json:"oauthClientSecret,omitempty"`
 	CertificateSecret    *corev1.SecretReference  `json:"certificateSecret,omitempty"`

@@ -30,8 +30,7 @@ MODULES=\
 	kube-state-metrics \
 	service-monitors \
 	prometheus-rules \
-	csv \
-	console \
+	csv 
 
 prepare:
 	mkdir -p $(PACKAGE_INSTALL_DIR)
@@ -70,7 +69,6 @@ replace_images: prepare
 					  -e 's,\$${ALERTMANAGER_IMAGE},$(ALERTMANAGER_IMAGE),g' \
 					  -e 's,\$${GRAFANA_IMAGE},$(GRAFANA_IMAGE),g' \
 					  -e 's,\$${KUBE_STATE_METRICS_IMAGE},$(KUBE_STATE_METRICS_IMAGE),g' \
-					  -e 's,\$${OAUTH_PROXY_IMAGE},$(OAUTH_PROXY_IMAGE),g' \
 					  -e 's,\$${HONO_IMAGE},$(HONO_IMAGE),g' \
 					  -e 's,\$${QDROUTERD_BASE_IMAGE},$(QDROUTERD_BASE_IMAGE),g' \
 					  -e 's,\$${HONO_VERSION},$(HONO_VERSION),g' \
@@ -81,7 +79,10 @@ replace_images: prepare
 					  -e 's,\$${IOT_HTTP_ADAPTER_IMAGE},$(IOT_HTTP_ADAPTER_IMAGE),g' \
 					  -e 's,\$${IOT_MQTT_ADAPTER_IMAGE},$(IOT_MQTT_ADAPTER_IMAGE),g' \
 					  -e 's,\$${IOT_PROXY_CONFIGURATOR_IMAGE},$(IOT_PROXY_CONFIGURATOR_IMAGE),g' \
-					  -e 's,\$${CONSOLE_IMAGE},$(CONSOLE_IMAGE),g' \
+					  -e 's,\$${CONSOLE_INIT_IMAGE},$(CONSOLE_INIT_IMAGE),g' \
+					  -e 's,\$${CONSOLE_PROXY_OPENSHIFT_IMAGE},$(CONSOLE_PROXY_OPENSHIFT_IMAGE),g' \
+					  -e 's,\$${CONSOLE_PROXY_KUBERNETES_IMAGE},$(CONSOLE_PROXY_KUBERNETES_IMAGE),g' \
+					  -e 's,\$${CONSOLE_HTTPD_IMAGE},$(CONSOLE_HTTPD_IMAGE),g' \
 					  -e 's,\$${ENMASSE_CONTROLLER_MANAGER_IMAGE},$(ENMASSE_CONTROLLER_MANAGER_IMAGE),g' > $$i.tmp; \
 		mv $$i.tmp $$i; \
 	done
@@ -114,17 +115,6 @@ $(IOT_BUNDLE): replace_images
 		cp $(BUILDDIR)/replaced/$$i/*.yaml $(IOT_BUNDLE)/; \
 	done
 
-CONSOLE_BUNDLE=$(PACKAGE_INSTALL_DIR)/preview-bundles/console
-$(CONSOLE_BUNDLE): replace_images
-	mkdir -p $(CONSOLE_BUNDLE)
-	for i in console; do \
-		cp $(BUILDDIR)/replaced/$$i/*.yaml $(CONSOLE_BUNDLE)/; \
-	done
-	for i in `find $(CONSOLE_BUNDLE) -name "*.yaml"`; do \
-		cat $$i | $(IMAGE_ENV) NAMESPACE=$(DEFAULT_PROJECT) envsubst '$${NAMESPACE},$${IMAGE_PULL_POLICY},$${CONSOLE_IMAGE}' > $$i.tmp; \
-		mv $$i.tmp $$i; \
-	done
-
 OLM=$(PACKAGE_INSTALL_DIR)/olm/enmasse
 $(OLM): replace_images
 	mkdir -p $(OLM)
@@ -132,7 +122,7 @@ $(OLM): replace_images
 		cp $(BUILDDIR)/replaced/$$i/*.yaml $(OLM)/; \
 	done
 
-install: ansible_install component_install $(ENMASSE_BUNDLE) $(MONITORING_BUNDLE) $(IOT_BUNDLE) $(CONSOLE_BUNDLE) $(OLM)
+install: ansible_install component_install $(ENMASSE_BUNDLE) $(MONITORING_BUNDLE) $(IOT_BUNDLE) $(OLM)
 	cp -r $(PACKAGE_DOCS_DIR) $(INSTALLDIR)/docs
 
 package: prepare install
@@ -140,4 +130,4 @@ package: prepare install
 
 coverage:
 
-.PHONY: prepare package clean $(ENMASSE_BUNDLE) $(MONITORING_BUNDLE) $(IOT_BUNDLE) $(CONSOLE_BUNDLE) $(OLM)
+.PHONY: prepare package clean $(ENMASSE_BUNDLE) $(MONITORING_BUNDLE) $(IOT_BUNDLE) $(OLM)

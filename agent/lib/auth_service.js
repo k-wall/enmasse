@@ -21,14 +21,15 @@ var rhea = require('rhea');
 var log = require("./log.js").logger();
 
 function authenticate(credentials, options) {
+    console.trace();
     return new Promise(function(resolve, reject) {
         if( credentials && credentials.username ) {
             options.username = credentials.username;
             if (credentials.password) {
-                log.debug('authenticating as %s using PLAIN', options.username);
+                log.info('authenticating as %s using PLAIN', options.username);
                 options.password = credentials.password;
             } else if (credentials.token) {
-                log.debug('authenticating as %s using XOAUTH2', options.username);
+                log.info('authenticating as %s using XOAUTH2', options.username);
                 options.token = credentials.token;
             }
         } else {
