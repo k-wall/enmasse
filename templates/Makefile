@@ -30,8 +30,7 @@ MODULES=\
 	kube-state-metrics \
 	service-monitors \
 	prometheus-rules \
-	csv \
-	console \
+	csv 
 
 prepare:
 	mkdir -p $(PACKAGE_INSTALL_DIR)
@@ -95,17 +94,6 @@ $(IOT_BUNDLE): replace_images
 		mv $$i.tmp $$i; \
 	done
 
-CONSOLE_BUNDLE=$(PACKAGE_INSTALL_DIR)/preview-bundles/console
-$(CONSOLE_BUNDLE): replace_images
-	mkdir -p $(CONSOLE_BUNDLE)
-	for i in console; do \
-		cp $(BUILDDIR)/replaced/$$i/*.yaml $(CONSOLE_BUNDLE)/; \
-	done
-	for i in `find $(CONSOLE_BUNDLE) -name "*.yaml"`; do \
-		cat $$i | $(IMAGE_ENV) NAMESPACE=$(DEFAULT_PROJECT) envsubst '$${NAMESPACE},$${IMAGE_PULL_POLICY},$${CONSOLE_IMAGE}' > $$i.tmp; \
-		mv $$i.tmp $$i; \
-	done
-
 OLM=$(PACKAGE_INSTALL_DIR)/olm/enmasse
 $(OLM): replace_images
 	mkdir -p $(OLM)
@@ -113,7 +101,7 @@ $(OLM): replace_images
 		cp $(BUILDDIR)/replaced/$$i/*.yaml $(OLM)/; \
 	done
 
-install: ansible_install component_install $(ENMASSE_BUNDLE) $(MONITORING_BUNDLE) $(IOT_BUNDLE) $(CONSOLE_BUNDLE) $(OLM)
+install: ansible_install component_install $(ENMASSE_BUNDLE) $(MONITORING_BUNDLE) $(IOT_BUNDLE) $(OLM)
 	cp -r $(PACKAGE_DOCS_DIR) $(INSTALLDIR)/docs
 
 package: prepare install
@@ -121,4 +109,4 @@ package: prepare install
 
 coverage:
 
-.PHONY: prepare package clean $(ENMASSE_BUNDLE) $(MONITORING_BUNDLE) $(IOT_BUNDLE) $(CONSOLE_BUNDLE) $(OLM)
+.PHONY: prepare package clean $(ENMASSE_BUNDLE) $(MONITORING_BUNDLE) $(IOT_BUNDLE) $(OLM)

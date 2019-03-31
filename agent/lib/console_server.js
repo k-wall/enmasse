@@ -32,12 +32,13 @@ var myutils = require('./utils.js');
 var auth_utils = require('./auth_utils.js');
 var Metrics = require('./metrics.js');
 
-function ConsoleServer (address_ctrl, env) {
+function ConsoleServer (address_ctrl, env, openshift) {
     this.address_ctrl = address_ctrl;
     this.addresses = new AddressList();
     this.metrics = new Metrics(env.ADDRESS_SPACE_NAMESPACE, env.ADDRESS_SPACE);
     this.connections = new Registry();
     this.listeners = {};
+    this.openshift = openshift;
     var self = this;
     this.addresses.on('updated', function (address) {
         self.publish({subject:'address',body:address});
@@ -78,14 +79,16 @@ function ConsoleServer (address_ctrl, env) {
             context.delivery.reject({condition: code || 'amqp:internal-error', description: '' + e});
         };
 
+        var access_token = self.authz.get_access_token(context.connection);
         if (!self.authz.is_admin(context.connection)) {
             reject(context, 'amqp:unauthorized-access', 'not authorized');
         } else if (context.message.subject === 'create_address') {
             log.info('creating address definition ' + JSON.stringify(context.message.body));
-            self.address_ctrl.create_address(context.message.body).then(accept).catch(reject);
+
+            self.address_ctrl.create_address(context.message.body, access_token).then(accept).catch(reject);
         } else if (context.message.subject === 'delete_address') {
             log.info('deleting address definition ' + context.message.body.address);
-            self.address_ctrl.delete_address(context.message.body).then(accept).catch(reject);
+            self.address_ctrl.delete_address(context.message.body, access_token).then(accept).catch(reject);
         } else {
             reject('ignoring message: ' + context.message);
         }
@@ -112,6 +115,9 @@ ConsoleServer.prototype.ws_bind = function (server, env) {
     }});
     this.ws_server.on('connection', function (ws, request) {
         log.info('Accepted incoming websocket connection');
+
+
+        // KWDEBUG
         self.amqp_container.websocket_accept(ws, self.authz.get_authz_props(request));
     });
 };
@@ -223,10 +229,18 @@ ConsoleServer.prototype.listen = function (env, callback) {
             response.end(util.format('%s not allowed on %s', request.method, request.url));
         }
     };
-    this.server = get_create_server(env)(auth_utils.auth_handler(this.authz, env, handler));
-    this.server.listen(env.port === undefined ? 8080 : env.port, callback);
-    this.ws_bind(this.server, env);
-    return this.server;
+
+    return new Promise((resolve, reject) => {
+        auth_utils.init_auth_handler(this.openshift, env).then((auth_context) => {
+            let handlers = auth_utils.auth_handler(this.authz, env, handler, auth_context, this.openshift);
+            this.server = get_create_server(env)(handlers);
+            var port = env.port === undefined ? 8080 : env.port;
+            this.server.listen(port, callback);
+            log.info("Console listening on port %d", port);
+            this.ws_bind(this.server, env);
+            resolve(this.server);
+        }).catch((e) => reject);
+    });
 };
 
 ConsoleServer.prototype.listen_health = function (env, callback) {
@@ -234,7 +248,7 @@ ConsoleServer.prototype.listen_health = function (env, callback) {
         var self = this;
         var health = http.createServer(function (req, res) {
             var pathname = url.parse(req.url).pathname;
-            if (pathname == "/metrics") {
+            if (pathname === "/metrics") {
                 var data = self.metrics.format_prometheus(new Date().getTime());
                 res.writeHead(200, {'Content-Type': 'text/html'});
                 res.end(data);
@@ -262,6 +276,7 @@ function indexer(message) {
 }
 
 ConsoleServer.prototype.subscribe = function (name, sender) {
+
     var buffered_sender = new BufferedSender(sender, indexer);
     this.listeners[name] = buffered_sender;
     this.addresses.for_each(function (address) {

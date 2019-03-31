@@ -46,7 +46,7 @@ func main() {
 	logf.SetLogger(logf.ZapLogger(development))
 	namespace := os.Getenv("NAMESPACE")
 
-	log.Info("KWDEBUG2")
+	log.Info("KWDEBUG5")
 	log.Info("Watching on namespace", "namespace", namespace)
 
 	printVersion()

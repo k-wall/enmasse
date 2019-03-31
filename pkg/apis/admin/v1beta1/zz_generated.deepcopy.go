@@ -394,11 +394,6 @@ func (in *ConsoleServiceSpec) DeepCopyInto(out *ConsoleServiceSpec) {
 		*out = new(string)
 		**out = **in
 	}
-	if in.OauthClientName != nil {
-		in, out := &in.OauthClientName, &out.OauthClientName
-		*out = new(string)
-		**out = **in
-	}
 	if in.Scope != nil {
 		in, out := &in.Scope, &out.Scope
 		*out = new(string)

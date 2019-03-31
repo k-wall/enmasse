@@ -35,8 +35,6 @@ spec:
                   type: string
                 namespace:
                   type: string
-            oauthClientName:
-              type: string
             scope:
               type: string
             routeName:

@@ -36,6 +36,7 @@ function is_view_permission(s) {
 }
 
 AuthorizationPolicy.prototype.access_console = function (properties) {
+//    console.trace();
     return properties.groups
         && (this.has_permission(admin_permission, properties.groups)
             || this.has_permission(monitor_permission, properties.groups)
@@ -43,12 +44,13 @@ AuthorizationPolicy.prototype.access_console = function (properties) {
 };
 
 AuthorizationPolicy.prototype.is_admin = function (connection) {
+//    console.trace();
     return this.has_permission(admin_permission, this.get_permissions(connection));
 };
 
 AuthorizationPolicy.prototype.set_authz_props = function (request, credentials, properties) {
     if (credentials) {
-        request.authz_props = {groups:properties.groups, authid:credentials.username};
+        request.authz_props = {groups:properties.groups, authid:credentials.username, token: credentials.token};
     } else {
         request.authz_props = {groups:properties.groups};
     }
@@ -64,6 +66,8 @@ AuthorizationPolicy.prototype.get_authz_props = function (request) {
 };
 
 AuthorizationPolicy.prototype.address_filter = function (connection) {
+//    console.trace();
+
     var permissions = this.get_permissions(connection);
     if (this.has_permission(admin_permission, permissions) || this.has_permission(monitor_permission, permissions)) {
         return undefined;
@@ -113,9 +117,23 @@ NullPolicy.prototype.is_admin = function () {
     return true;
 };
 
-NullPolicy.prototype.set_authz_props = function (request, credentials, properties) {};
 
-NullPolicy.prototype.get_authz_props = function (request) {};
+NullPolicy.prototype.set_authz_props = function (request, credentials, properties) {
+    if (credentials) {
+        request.authz_props = {groups: properties.groups, authid: credentials.username, token: credentials.token};
+    } else {
+        request.authz_props = {groups: properties.groups};
+    }
+};
+
+NullPolicy.prototype.get_authz_props = function (request) {
+    try {
+        return request.authz_props;
+    } catch (error) {
+        log.error('error retrieving authz properties for user: %s', error);
+        return undefined;
+    }
+}
 
 NullPolicy.prototype.address_filter = function (connection) {
     return undefined;
@@ -129,7 +147,14 @@ NullPolicy.prototype.can_publish = function (sender, message) {
     return true;
 };
 
+NullPolicy.prototype.get_access_token = function (connection) {
+    return connection.options && connection.options.token ? connection.options.token.getAccessToken() : null;
+}
+
+
 module.exports.policy = function (env) {
+    console.trace();
+    return new NullPolicy();
     if (env.DISABLE_AUTHORIZATION) {
         return new NullPolicy();
     } else {

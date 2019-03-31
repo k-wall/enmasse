@@ -34,20 +34,22 @@ import (
 
 
 /*
-TODO kubernetes path
-TODO refactor CRD to organise fields for the openshift/kubernetes in a more cohesive way
-TODO Handle the case of many ingress points (Openshift)
+TODO automatically create the consoleservice CRD on openshift
+TODO on kubernetes, deal with the case where the consoleservice is not configure or is incomplete.
 TODO TLS for the HTTPD side car
 TODO Tidy up (minimise) Apache HTTPD conf
-TODO Expose console endpoint to the user (as a dynamic field in the CRD?)
 TODO Tidy up this code - extract utility methods
 TODO unit tests - having prblem with client when interacting with openshift API endpoints?
+TODO Add status to CRD:
+        - Expose console endpoint to the user
+        - In the kubernettes case, we could report the absence of the secret.
 
  */
 var log = logf.Log.WithName("controller_consoleservice")
 
 // Gets called by parent "init", adding as to the manager
 func Add(mgr manager.Manager) error {
+
 	return add(mgr, newReconciler(mgr))
 }
 
@@ -85,8 +87,48 @@ func add(mgr manager.Manager, r *ReconcileConsoleService) error {
 		return err
 	}
 
-	// TODO We need to watch routes, so we can adjust the redirects of the oauthclient
-	// TODO We need to watch oauthclient, so we can adjust the secret cached in the secret.
+	if (util.IsOpenshift()) {
+		// Changes to the secret or routes potentially need to be written to the oauthclient
+		err = c.Watch(&source.Kind{Type: &corev1.Secret{}}, &handler.EnqueueRequestForOwner{
+			IsController: true,
+			OwnerType:    &v1beta1.ConsoleService{},
+		})
+		if err != nil {
+			return err
+		}
+
+		// Watch for route changes.
+		mapFn := handler.ToRequestsFunc(
+			func(a handler.MapObject) []reconcile.Request {
+
+				reqs := make([]reconcile.Request, 0)
+
+				log.Info("KWDEBUG Route " + a.Meta.GetName())
+				if strings.HasPrefix(a.Meta.GetName(), "console-") {
+					list := &v1beta1.ConsoleServiceList{}
+					err = r.client.List(context.TODO(),  &client.ListOptions{}, list)
+					if err == nil {
+						for _, item := range list.Items {
+							log.Info("KWDEBUG Reconciling  " + item.ObjectMeta.Name)
+							request := reconcile.Request{
+								NamespacedName: types.NamespacedName{
+									Name:      item.ObjectMeta.Name,
+									Namespace: item.ObjectMeta.Namespace,
+								},
+							}
+							reqs = append(reqs, request)
+						}
+					}
+				}
+				return reqs
+			})
+		err = c.Watch(&source.Kind{Type: &routev1.Route{}}, &handler.EnqueueRequestsFromMapFunc{
+			ToRequests: mapFn,
+		})
+		if err != nil {
+			return err
+		}
+	}
 
 	return nil
 }
@@ -126,8 +168,6 @@ func (r *ReconcileConsoleService) Reconcile(request reconcile.Request) (reconcil
 		return reconcile.Result{}, err
 	}
 
-	// If kubernetes, check for configmap, if no exist, requeue
-
 	// service
 	result, err := r.reconcileService(ctx, consoleservice)
 	if err != nil {
@@ -150,7 +190,6 @@ func (r *ReconcileConsoleService) Reconcile(request reconcile.Request) (reconcil
 	requeue = requeue || result.Requeue
 
 	// deployment
-
 	result, err = r.reconcileDeployment(ctx, consoleservice)
 	if err != nil {
 		return reconcile.Result{}, err
@@ -161,20 +200,27 @@ func (r *ReconcileConsoleService) Reconcile(request reconcile.Request) (reconcil
 }
 
 func applyConsoleServiceDefaults(ctx context.Context, client client.Client, scheme *runtime.Scheme, consoleservice *v1beta1.ConsoleService) error {
+	var dirty = false;
+
 	if consoleservice.Spec.DeploymentName == nil {
 		consoleservice.Spec.DeploymentName = &consoleservice.Name
+		dirty = true
 	}
 	if consoleservice.Spec.ServiceName == nil {
 		consoleservice.Spec.ServiceName = &consoleservice.Name
+		dirty = true
 	}
 	if consoleservice.Spec.RouteName == nil {
 		consoleservice.Spec.RouteName = &consoleservice.Name
+		dirty = true
 	}
 	if consoleservice.Spec.ServiceAccountName == nil {
 		serviceaccount := "consoleservice"
 		consoleservice.Spec.ServiceAccountName = &serviceaccount
+		dirty = true
 	}
 	if consoleservice.Spec.CertificateSecret == nil {
+		dirty = true
 		secretName := consoleservice.Name + "-cert"
 		consoleservice.Spec.CertificateSecret = &corev1.SecretReference{
 			Name: secretName,
@@ -194,31 +240,49 @@ func applyConsoleServiceDefaults(ctx context.Context, client client.Client, sche
 	}
 
 	if util.IsOpenshift() {
-		if consoleservice.Spec.OauthClientName == nil  {
-			consoleservice.Spec.OauthClientName = &consoleservice.Name
-		}
-
 		if consoleservice.Spec.Scope == nil {
+			dirty = true
 			scope := "user:full"
 			consoleservice.Spec.Scope = &scope
 		}
 
 		if consoleservice.Spec.OauthClientSecret == nil {
+			dirty = true
 			secretName := consoleservice.Name + "-oauth"
 			consoleservice.Spec.OauthClientSecret = &corev1.SecretReference{Name: secretName}
 		}
 
 		if consoleservice.Spec.DiscoveryMetadataURL == nil {
+			dirty = true
 			s := "https://openshift.default.svc/.well-known/oauth-authorization-server"
 			consoleservice.Spec.DiscoveryMetadataURL = &s
 
-			// TODO workaround oc cluster up without public ip
+			// TODO workaround oauth-authorization-server document that refers to loopback i.e.
+			// oc cluster up without public ip
+			/*
+				var openshiftUrl string
+				openshiftUrl, err = util.OpenshiftUri()
+				if err != nil {
+					return reconcile.Result{}, err
+				}
+				if openshiftUrl == "" || strings.Contains(openshiftUrl, "https://localhost:8443") || strings.Contains(openshiftUrl, "https://127.0.0.1:8443") {
+					openshiftUrl = fmt.Sprintf("https://%s:%s", util.GetEnvOrDefault("KUBERNETES_SERVICE_HOST", "172.30.0.1"), util.GetEnvOrDefault("KUBERNETES_SERVICE_PORT", "443"))
+				}
+
+			 */
 		}
 	} else {
 		if consoleservice.Spec.Scope == nil {
+			dirty = true
 			scope := "openid"
 			consoleservice.Spec.Scope = &scope
 		}
+	}
+
+	if dirty {
+		// address-space-controller does not know the default values
+		err := client.Update(ctx, consoleservice);
+		return err
 	}
 
 	return nil
@@ -486,51 +550,65 @@ func applyDeployment(consoleservice *v1beta1.ConsoleService, deployment *appsv1.
 func (r *ReconcileConsoleService) reconcileOauthClient(ctx context.Context, consoleservice *v1beta1.ConsoleService) (reconcile.Result, error) {
 	if util.IsOpenshift() {
 
-		key := client.ObjectKey{Namespace: consoleservice.Namespace, Name: *consoleservice.Spec.RouteName}
-		route := &routev1.Route{}
-		err := r.client.Get(ctx, key, route)
+		secretref := consoleservice.Spec.OauthClientSecret
+
+		secret := &corev1.Secret{
+			ObjectMeta: metav1.ObjectMeta{Namespace: consoleservice.Namespace, Name: secretref.Name},
+		}
+		_, err := controllerutil.CreateOrUpdate(ctx, r.client, secret, func(existing runtime.Object) error {
+			secret = existing.(*corev1.Secret)
+			if err := controllerutil.SetControllerReference(consoleservice, secret, r.scheme); err != nil {
+				return err
+			}
+			return applyOauthSecret(secret)
+		})
+
 		if err != nil {
+			log.Error(err, "Failed reconciling OAuth Secret")
 			return reconcile.Result{}, err
 		}
 
-		var openshiftUrl string
-		openshiftUrl, err = util.OpenshiftUri()
+		key := client.ObjectKey{Namespace: consoleservice.Namespace, Name: *consoleservice.Spec.RouteName}
+		route := &routev1.Route{}
+		err = r.client.Get(ctx, key, route)
 		if err != nil {
 			return reconcile.Result{}, err
-		}
-		if openshiftUrl == "" || strings.Contains(openshiftUrl, "https://localhost:8443") || strings.Contains(openshiftUrl, "https://127.0.0.1:8443") {
-			openshiftUrl = fmt.Sprintf("https://%s:%s", util.GetEnvOrDefault("KUBERNETES_SERVICE_HOST", "172.30.0.1"), util.GetEnvOrDefault("KUBERNETES_SERVICE_PORT", "443"))
 		}
 
 		if len(route.Status.Ingress) == 0 {
 			return reconcile.Result{}, nil
 		}
 
-		redirects := make([]string, len(route.Status.Ingress))
+		redirects := make([]string, 0)
+		redirects = buildRedirectsFor(*route, redirects)
 
-		scheme := "http"
-		if route.Spec.TLS != nil {
-			scheme = "https"
-		}
-		for i, element := range route.Status.Ingress {
-			redirects[i] = fmt.Sprintf("%s://%s", scheme, element.Host )
+		list := &routev1.RouteList{}
+
+		opts := &client.ListOptions{}
+		//_ = opts.SetLabelSelector("app=enmasse")
+		err = r.client.List(context.TODO(), opts, list)
+		if err != nil {
+			return reconcile.Result{}, nil
 		}
 
-		var oauthname = *consoleservice.Spec.OauthClientName
+		for _, item := range list.Items {
+			// TODO it would be better if we could use a label allowed us to identify the routes belonging
+			// to address space console instances.
+			if strings.HasPrefix(item.Name, "console-")  {
+				redirects = buildRedirectsFor(item, redirects)
+			}
+		}
 		oauth := &oauthv1.OAuthClient{
-			ObjectMeta: metav1.ObjectMeta{Name: oauthname},
-
+			ObjectMeta: metav1.ObjectMeta{Name: secret.Name},
 		}
 
 		_, err = controllerutil.CreateOrUpdate(ctx, r.client, oauth, func(existing runtime.Object) error {
 			existingOauth := existing.(*oauthv1.OAuthClient)
 
-			applyOauthClient(consoleservice, existingOauth, redirects)
-
-			//if err := controllerutil.SetControllerReference(consoleservice, existingOauth, r.scheme); err != nil {
-			//	return err
-			//}
-
+			err = applyOauthClient(existingOauth, secret, redirects)
+			if err != nil {
+				return err
+			}
 			return nil
 		})
 
@@ -539,65 +617,53 @@ func (r *ReconcileConsoleService) reconcileOauthClient(ctx context.Context, cons
 			return reconcile.Result{}, err
 		}
 
-		secretref := consoleservice.Spec.OauthClientSecret
-
-		secret := &corev1.Secret{
-			ObjectMeta: metav1.ObjectMeta{Namespace: consoleservice.Namespace, Name: secretref.Name},
-		}
-		_, err = controllerutil.CreateOrUpdate(ctx, r.client, secret, func(existing runtime.Object) error {
-			existingSecret := existing.(*corev1.Secret)
-
-			if err := controllerutil.SetControllerReference(consoleservice, existingSecret, r.scheme); err != nil {
-				return err
-			}
-
-			return applyOauthSecret(consoleservice, existingSecret, oauth)
-		})
-
-		if err != nil {
-			log.Error(err, "Failed reconciling OAuth Secret")
-			return reconcile.Result{}, err
-		}
 		return reconcile.Result{}, nil
-
-
-		//if consoleservice.Annotations == nil {
-		//	consoleservice.Annotations = make(map[string]string)
-		//}
-		//
-		//if redirectUrl != "" {
-		//	consoleservice.Annotations["enmasse.io/oauth-url"] = redirectUrl
-		//}
-		//
-		//if openshiftUrl != "" {
-		//	consoleservice.Annotations["enmasse.io/identity-provider-url"] = openshiftUrl
-		//	consoleservice.Annotations["enmasse.io/identity-provider-client-id"] = oauth.Name
-		//	consoleservice.Annotations["enmasse.io/identity-provider-client-secret"] = oauth.Secret
-		//}
 	}
 	return reconcile.Result{}, nil
 }
 
-
-func applyOauthClient(consoleservice *v1beta1.ConsoleService, oauth *oauthv1.OAuthClient, redirects []string) error {
-	install.ApplyDefaultLabels(&oauth.ObjectMeta, "oauthclient", oauth.Name)
-	if oauth.Secret == "" {
-		password, err := util.GeneratePassword(32)
-		if err != nil {
-			return err
-		}
-		oauth.Secret = password
+func buildRedirectsFor(route routev1.Route, redirects []string) []string {
+	scheme := "http"
+	if route.Spec.TLS != nil {
+		scheme = "https"
 	}
+	for _, ingress := range route.Status.Ingress {
+		redirect := fmt.Sprintf("%s://%s", scheme, ingress.Host)
+		redirects = append(redirects, redirect)
+	}
+	return redirects
+}
+
+
+func applyOauthClient(oauth *oauthv1.OAuthClient, secret *corev1.Secret, redirects []string) error {
+	install.ApplyDefaultLabels(&oauth.ObjectMeta, "oauthclient", oauth.Name)
+	bytes := secret.Data["client-secret"]
+	oauth.Secret = string(bytes[:])
+
 	oauth.GrantMethod = oauthv1.GrantHandlerAuto
 	oauth.RedirectURIs = redirects;
 	return nil
 }
 
-func applyOauthSecret(consoleService *v1beta1.ConsoleService, secret *corev1.Secret, oauth *oauthv1.OAuthClient) error {
+func applyOauthSecret(secret *corev1.Secret) error {
 
-	secret.StringData = make(map[string]string)
-	secret.StringData["client-id"] = oauth.Name
-	secret.StringData["client-secret"] = oauth.Secret;
+	if secret.Data == nil {
+		secret.Data = make(map[string][]byte)
+	}
+
+	if _, hassecret := secret.Data["client-secret"];  !hassecret {
+		password, err := util.GeneratePassword(32)
+		if err != nil {
+			return err
+		}
+
+		secret.Data["client-secret"] = []byte(password)
+	}
+
+	if _, hasid := secret.Data["client-id"];  !hasid {
+		secret.Data["client-id"] = []byte(secret.Name)
+	}
+
 
 	return nil
 }
