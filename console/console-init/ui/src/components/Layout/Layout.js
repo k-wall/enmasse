@@ -3,11 +3,13 @@ import {
   Avatar,
   BackgroundImage,
   BackgroundImageSrc,
+  Brand,
   Button,
   ButtonVariant,
   Dropdown,
   DropdownToggle,
   DropdownItem,
+  List,ListItem,
   Nav,
   NavItem,
   NavList,
@@ -23,7 +25,7 @@ import {
 } from '@patternfly/react-core';
 import accessibleStyles from '@patternfly/patternfly/utilities/Accessibility/accessibility.css';
 import { css } from '@patternfly/react-styles';
-import { BellIcon, CogIcon } from '@patternfly/react-icons';
+import Aux from '../../hoc/Aux/Aux';
 
 import avatarImg from "../../assets/images/img_avatar.svg";
 import xsImage from '../../assets/images/pfbg_576.jpg';
@@ -33,9 +35,9 @@ import sm2xImage from '../../assets/images/pfbg_768@2x.jpg';
 import lgImage from '../../assets/images/pfbg_1200.jpg';
 import filter from '../../assets/images/background-filter.svg';
 
+import brandImg from '../../assets/images/logo.svg';
+
 import './Layout.css';
-
-
 
 class Layout extends React.Component {
   constructor(props) {
@@ -43,7 +45,7 @@ class Layout extends React.Component {
     this.state = {
       isDropdownOpen: false,
       isKebabDropdownOpen: false,
-      activeItem: 0
+      activeItem: 0,
     };
   }
 
@@ -108,18 +110,6 @@ class Layout extends React.Component {
     ];
     const PageToolbar = (
       <Toolbar>
-        <ToolbarGroup className={css(accessibleStyles.screenReader, accessibleStyles.visibleOnLg)}>
-          <ToolbarItem>
-            <Button id="horizontal-example-uid-01" aria-label="Notifications actions" variant={ButtonVariant.plain}>
-              <BellIcon />
-            </Button>
-          </ToolbarItem>
-          <ToolbarItem>
-            <Button id="horizontal-example-uid-02" aria-label="Settings actions" variant={ButtonVariant.plain}>
-              <CogIcon />
-            </Button>
-          </ToolbarItem>
-        </ToolbarGroup>
         <ToolbarGroup>
           <ToolbarItem className={css(accessibleStyles.screenReader, accessibleStyles.visibleOnMd)}>
             <Dropdown
@@ -141,21 +131,19 @@ class Layout extends React.Component {
       [BackgroundImageSrc.sm]: smImage,
       [BackgroundImageSrc.sm2x]: sm2xImage,
       [BackgroundImageSrc.lg]: lgImage,
-      [BackgroundImageSrc.filter]: `{filter}#image_overlay`
+      [BackgroundImageSrc.filter]: filter
     };
 
     const Header = (
       <PageHeader
-        logo={"AMQ Console"}
+        logo={<Brand src={brandImg} alt="Console Logo" />}
         toolbar={PageToolbar}
         avatar={<Avatar src={avatarImg} alt="Avatar image" />}
       />
     );
 
-    console.log(avatarImg);
-
     return (
-      <React.Fragment>
+      <Aux>
         <BackgroundImage src={bgImages} />
         <Page header={Header}>
           <PageSection variant={PageSectionVariants.darker} className='navSection'>{PageNav}</PageSection>
@@ -166,7 +154,7 @@ class Layout extends React.Component {
           </PageSection>
 
         </Page>
-      </React.Fragment>
+      </Aux>
     );
   }
 }

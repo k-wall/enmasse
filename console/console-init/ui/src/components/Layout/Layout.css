@@ -2,3 +2,6 @@
   padding-bottom: 0px !important;
 }
 
+div#root {
+  height: 100%;
+}
