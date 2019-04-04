@@ -24,7 +24,7 @@ import java.util.Objects;
         inline = @Inline(type = Doneable.class, prefix = "Doneable", value = "done")
 )
 @JsonPropertyOrder({"discoveryMetadataURL", "oauthClientSecret", "certificateSecret",
-        "scope", "routeName", "serviceName", "deploymentName"})
+        "scope"})
 @JsonInclude(JsonInclude.Include.NON_NULL)
 public class ConsoleServiceSpec extends AbstractWithAdditionalProperties {
 
@@ -32,9 +32,6 @@ public class ConsoleServiceSpec extends AbstractWithAdditionalProperties {
     private SecretReference oauthClientSecret;
     private SecretReference certificateSecret;
     private String scope;
-    private String routeName;
-    private String serviceName;
-    private String deploymentName;
 
     @Override
     public boolean equals(Object o) {
@@ -44,15 +41,12 @@ public class ConsoleServiceSpec extends AbstractWithAdditionalProperties {
         return Objects.equals(discoveryMetadataURL, that.discoveryMetadataURL) &&
                 Objects.equals(oauthClientSecret, that.oauthClientSecret) &&
                 Objects.equals(certificateSecret, that.certificateSecret) &&
-                Objects.equals(scope, that.scope) &&
-                Objects.equals(routeName, that.routeName) &&
-                Objects.equals(serviceName, that.serviceName) &&
-                Objects.equals(deploymentName, that.deploymentName);
+                Objects.equals(scope, that.scope);
     }
 
     @Override
     public int hashCode() {
-        return Objects.hash(discoveryMetadataURL, oauthClientSecret, certificateSecret, scope, routeName, serviceName, deploymentName);
+        return Objects.hash(discoveryMetadataURL, oauthClientSecret, certificateSecret, scope);
     }
 
     @Override
@@ -62,9 +56,6 @@ public class ConsoleServiceSpec extends AbstractWithAdditionalProperties {
                 ", oauthClientSecret=" + oauthClientSecret +
                 ", certificateSecret=" + certificateSecret +
                 ", scope='" + scope + '\'' +
-                ", routeName='" + routeName + '\'' +
-                ", serviceName='" + serviceName + '\'' +
-                ", deploymentName='" + deploymentName + '\'' +
                 '}';
     }
 
@@ -98,29 +89,5 @@ public class ConsoleServiceSpec extends AbstractWithAdditionalProperties {
 
     public void setScope(String scope) {
         this.scope = scope;
-    }
-
-    public String getRouteName() {
-        return routeName;
-    }
-
-    public void setRouteName(String routeName) {
-        this.routeName = routeName;
-    }
-
-    public String getServiceName() {
-        return serviceName;
-    }
-
-    public void setServiceName(String serviceName) {
-        this.serviceName = serviceName;
-    }
-
-    public String getDeploymentName() {
-        return deploymentName;
-    }
-
-    public void setDeploymentName(String deploymentName) {
-        this.deploymentName = deploymentName;
     }
 }

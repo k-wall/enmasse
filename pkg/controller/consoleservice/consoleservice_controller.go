@@ -6,16 +6,15 @@
 package consoleservice
 
 import (
+	"context"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"github.com/enmasseproject/enmasse/pkg/apis/admin/v1beta1"
-	"github.com/enmasseproject/enmasse/pkg/controller/authenticationservice"
 	"github.com/enmasseproject/enmasse/pkg/util"
 	"github.com/enmasseproject/enmasse/pkg/util/install"
 	oauthv1 "github.com/openshift/api/oauth/v1"
 	routev1 "github.com/openshift/api/route/v1"
-	"golang.org/x/net/context"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	k8errors "k8s.io/apimachinery/pkg/api/errors"
@@ -37,9 +36,7 @@ import (
 
 
 /*
-TODO do we need console service account?
-TODO trim the CRD - the deployment, service names etc are superfluous.   However, being able to specify the route's hostname
-     from the CRD would be advantageous.
+TODO Add the ability to specify the route's hostname from the CRD would be advantageous.
 TODO TLS for the HTTPD side car
 TODO Tidy up (minimise) Apache HTTPD conf
 TODO Tidy up this code - extract utility methods
@@ -47,7 +44,6 @@ TODO unit tests - having prblem with client when interacting with openshift API 
 TODO Add status to CRD:
         - Expose console endpoint to the user
         - In the kubernettes case, we could report the absence of the secret.
-
  */
 const CONSOLE_NAME = "console"
 
@@ -218,18 +214,6 @@ func (r *ReconcileConsoleService) Reconcile(request reconcile.Request) (reconcil
 func applyConsoleServiceDefaults(ctx context.Context, client client.Client, scheme *runtime.Scheme, consoleservice *v1beta1.ConsoleService) error {
 	var dirty = false;
 
-	if consoleservice.Spec.DeploymentName == nil {
-		consoleservice.Spec.DeploymentName = &consoleservice.Name
-		dirty = true
-	}
-	if consoleservice.Spec.ServiceName == nil {
-		consoleservice.Spec.ServiceName = &consoleservice.Name
-		dirty = true
-	}
-	if consoleservice.Spec.RouteName == nil {
-		consoleservice.Spec.RouteName = &consoleservice.Name
-		dirty = true
-	}
 	if consoleservice.Spec.CertificateSecret == nil {
 		dirty = true
 		secretName := consoleservice.Name + "-cert"
@@ -238,10 +222,10 @@ func applyConsoleServiceDefaults(ctx context.Context, client client.Client, sche
 		}
 
 		if !util.IsOpenshift() {
-			err := authenticationservice.CreateAuthserviceSecret(ctx, client, scheme, consoleservice.Namespace, secretName, consoleservice, func(secret *corev1.Secret) error {
+			err := util.CreateSecret(ctx, client, scheme, consoleservice.Namespace, secretName, consoleservice, func(secret *corev1.Secret) error {
 				install.ApplyDefaultLabels(&secret.ObjectMeta, "consoleservice", secretName)
 
-				cn := util.ServiceToCommonName(consoleservice.Namespace, *consoleservice.Spec.ServiceName)
+				cn := util.ServiceToCommonName(consoleservice.Namespace, consoleservice.Name)
 				return util.GenerateSelfSignedCertSecret(cn, nil, nil, secret)
 			})
 			if err != nil {
@@ -324,7 +308,7 @@ func applyConsoleServiceDefaults(ctx context.Context, client client.Client, sche
 
 func (r *ReconcileConsoleService) reconcileService(ctx context.Context, consoleservice *v1beta1.ConsoleService) (reconcile.Result, error) {
 	service := &corev1.Service{
-		ObjectMeta: metav1.ObjectMeta{Namespace: consoleservice.Namespace, Name: *consoleservice.Spec.ServiceName},
+		ObjectMeta: metav1.ObjectMeta{Namespace: consoleservice.Namespace, Name: consoleservice.Name},
 	}
 	_, err := controllerutil.CreateOrUpdate(ctx, r.client, service, func(existing runtime.Object) error {
 		existingService := existing.(*corev1.Service)
@@ -345,7 +329,7 @@ func (r *ReconcileConsoleService) reconcileService(ctx context.Context, consoles
 
 func applyService(consoleService *v1beta1.ConsoleService, service *corev1.Service) error {
 
-	install.ApplyServiceDefaults(service, "consoleservice", *consoleService.Spec.ServiceName)
+	install.ApplyServiceDefaults(service, "consoleservice", consoleService.Name)
 	service.Spec.Selector = install.CreateDefaultLabels(nil, "consoleservice", consoleService.Name)
 
 	if service.Annotations == nil {
@@ -367,7 +351,7 @@ func applyService(consoleService *v1beta1.ConsoleService, service *corev1.Servic
 func (r *ReconcileConsoleService) reconcileRoute(ctx context.Context, consoleservice *v1beta1.ConsoleService) (reconcile.Result, error) {
 	if util.IsOpenshift() {
 		route := &routev1.Route{
-			ObjectMeta: metav1.ObjectMeta{Namespace: consoleservice.Namespace, Name: *consoleservice.Spec.RouteName},
+			ObjectMeta: metav1.ObjectMeta{Namespace: consoleservice.Namespace, Name: consoleservice.Name},
 		}
 		_, err := controllerutil.CreateOrUpdate(ctx, r.client, route, func(existing runtime.Object) error {
 			existingRoute := existing.(*routev1.Route)
@@ -418,7 +402,7 @@ func applyRoute(consoleservice *v1beta1.ConsoleService, route *routev1.Route, ca
 
 func (r *ReconcileConsoleService) reconcileDeployment(ctx context.Context, consoleservice *v1beta1.ConsoleService) (reconcile.Result, error) {
 	deployment := &appsv1.Deployment{
-		ObjectMeta: metav1.ObjectMeta{Namespace: consoleservice.Namespace, Name: *consoleservice.Spec.DeploymentName},
+		ObjectMeta: metav1.ObjectMeta{Namespace: consoleservice.Namespace, Name: consoleservice.Name},
 	}
 	_, err := controllerutil.CreateOrUpdate(ctx, r.client, deployment, func(existing runtime.Object) error {
 		existingDeployment := existing.(*appsv1.Deployment)
@@ -439,7 +423,7 @@ func (r *ReconcileConsoleService) reconcileDeployment(ctx context.Context, conso
 
 func applyDeployment(consoleservice *v1beta1.ConsoleService, deployment *appsv1.Deployment) error {
 
-	install.ApplyDeploymentDefaults(deployment, "consoleservice", *consoleservice.Spec.DeploymentName)
+	install.ApplyDeploymentDefaults(deployment, "consoleservice", consoleservice.Name)
 
 	install.ApplyEmptyDirVolume(deployment, "apps")
 	install.ApplySecretVolume(deployment, "console-tls", consoleservice.Spec.CertificateSecret.Name)
@@ -592,7 +576,7 @@ func (r *ReconcileConsoleService) reconcileOauthClient(ctx context.Context, cons
 			return reconcile.Result{}, err
 		}
 
-		key := client.ObjectKey{Namespace: consoleservice.Namespace, Name: *consoleservice.Spec.RouteName}
+		key := client.ObjectKey{Namespace: consoleservice.Namespace, Name: consoleservice.Name}
 		route := &routev1.Route{}
 		err = r.client.Get(ctx, key, route)
 		if err != nil {

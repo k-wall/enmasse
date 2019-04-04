@@ -409,21 +409,6 @@ func (in *ConsoleServiceSpec) DeepCopyInto(out *ConsoleServiceSpec) {
 		*out = new(v1.SecretReference)
 		**out = **in
 	}
-	if in.RouteName != nil {
-		in, out := &in.RouteName, &out.RouteName
-		*out = new(string)
-		**out = **in
-	}
-	if in.ServiceName != nil {
-		in, out := &in.ServiceName, &out.ServiceName
-		*out = new(string)
-		**out = **in
-	}
-	if in.DeploymentName != nil {
-		in, out := &in.DeploymentName, &out.DeploymentName
-		*out = new(string)
-		**out = **in
-	}
 	return
 }
 

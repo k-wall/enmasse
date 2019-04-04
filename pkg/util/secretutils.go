@@ -2,7 +2,7 @@
  * Copyright 2019, EnMasse authors.
  * License: Apache License 2.0 (see the file LICENSE or http://apache.org/licenses/LICENSE-2.0.html).
  */
-package authenticationservice
+package util
 
 import (
 	"context"
@@ -17,8 +17,7 @@ import (
 
 type ApplySecretFn func(secret *corev1.Secret) error
 
-// Move me // try 	owner.GetNamespace()
-func CreateAuthserviceSecret(ctx context.Context, client client.Client, scheme *runtime.Scheme, namespace string, secretName string, owner metav1.Object, applyfn ApplySecretFn) error {
+func CreateSecret(ctx context.Context, client client.Client, scheme *runtime.Scheme, namespace string, secretName string, owner metav1.Object, applyfn ApplySecretFn) error {
 	secret := &corev1.Secret{}
 	err := client.Get(ctx, types.NamespacedName{Namespace: namespace, Name: secretName}, secret)
 	if err != nil && errors.IsNotFound(err) {

@@ -37,11 +37,3 @@ spec:
                   type: string
             scope:
               type: string
-            routeName:
-              type: string
-            serviceName:
-              type: string
-            deploymentName:
-              type: string
-            serviceAccountName:
-              type: string
