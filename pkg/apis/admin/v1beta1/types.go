@@ -123,6 +123,7 @@ type ConsoleService struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`
 	Spec              ConsoleServiceSpec `json:"spec"`
+	Status            ConsoleServiceStatus `json:"status"`
 }
 
 type ConsoleServiceSpec struct {
@@ -130,6 +131,13 @@ type ConsoleServiceSpec struct {
 	Scope                *string                  `json:"scope,omitempty"`
 	OauthClientSecret    *corev1.SecretReference  `json:"oauthClientSecret,omitempty"`
 	CertificateSecret    *corev1.SecretReference  `json:"certificateSecret,omitempty"`
+	Host                 *string                  `json:"host,omitempty"`
+}
+
+type ConsoleServiceStatus struct {
+	Host             string                  `json:"host,omitempty"`
+	Port             int                     `json:"port,omitempty"`
+	CaCertSecret     *corev1.SecretReference `json:"caCertSecret,omitempty"`
 }
 
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object

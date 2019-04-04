@@ -28,6 +28,7 @@ public class ConsoleService extends AbstractHasMetadataWithAdditionalProperties<
     public static final String KIND = "ConsoleService";
 
     private ConsoleServiceSpec spec;
+    private ConsoleServiceStatus status;
 
     public ConsoleService() {
         super(KIND, AdminCrd.API_VERSION_V1BETA1);
@@ -51,6 +52,7 @@ public class ConsoleService extends AbstractHasMetadataWithAdditionalProperties<
     public String toString() {
         return "ConsoleService{" +
                 "metadata=" + getMetadata() +
+                ", status='" + status + '\'' +
                 ", spec=" + spec + "}";
     }
 
@@ -60,5 +62,13 @@ public class ConsoleService extends AbstractHasMetadataWithAdditionalProperties<
 
     public ConsoleServiceSpec getSpec() {
         return spec;
+    }
+
+    public ConsoleServiceStatus getStatus() {
+        return status;
+    }
+
+    public void setStatus(ConsoleServiceStatus status) {
+        this.status = status;
     }
 }

@@ -23,6 +23,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"net/url"
+	"reflect"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
@@ -36,14 +37,10 @@ import (
 
 
 /*
-TODO Add the ability to specify the route's hostname from the CRD would be advantageous.
 TODO TLS for the HTTPD side car
 TODO Tidy up (minimise) Apache HTTPD conf
 TODO Tidy up this code - extract utility methods
 TODO unit tests - having prblem with client when interacting with openshift API endpoints?
-TODO Add status to CRD:
-        - Expose console endpoint to the user
-        - In the kubernettes case, we could report the absence of the secret.
  */
 const CONSOLE_NAME = "console"
 
@@ -188,7 +185,7 @@ func (r *ReconcileConsoleService) Reconcile(request reconcile.Request) (reconcil
 	requeue := result.Requeue
 
 	// route
-	result, err = r.reconcileRoute(ctx, consoleservice)
+	result, route, err := r.reconcileRoute(ctx, consoleservice)
 	if err != nil {
 		return reconcile.Result{}, err
 	}
@@ -208,7 +205,39 @@ func (r *ReconcileConsoleService) Reconcile(request reconcile.Request) (reconcil
 	}
 	requeue = requeue || result.Requeue
 
+	result, err = r.updateStatus(ctx, consoleservice, func(status *v1beta1.ConsoleServiceStatus) error {
+
+		if route != nil && len(route.Status.Ingress) > 0 {
+			status.Host = route.Status.Ingress[0].Host
+			status.Port = 443
+			var cert = consoleservice.Spec.CertificateSecret
+			status.CaCertSecret = cert
+		}
+		return nil
+	})
+
 	return reconcile.Result{Requeue: requeue}, nil
+}
+
+type UpdateStatusFn func(status *v1beta1.ConsoleServiceStatus) error
+
+func (r *ReconcileConsoleService) updateStatus(ctx context.Context, consoleservice *v1beta1.ConsoleService, updateFn UpdateStatusFn) (reconcile.Result, error) {
+
+	newStatus := v1beta1.ConsoleServiceStatus{}
+	updateFn(&newStatus)
+
+	if consoleservice.Status.Host != newStatus.Host ||
+		consoleservice.Status.Port != newStatus.Port ||
+		!reflect.DeepEqual(consoleservice.Status.CaCertSecret, newStatus.CaCertSecret) {
+
+		consoleservice.Status = newStatus
+		err := r.client.Update(ctx, consoleservice)
+		if err != nil {
+			return reconcile.Result{}, err
+		}
+		return reconcile.Result{Requeue: true}, nil
+	}
+	return reconcile.Result{}, nil
 }
 
 func applyConsoleServiceDefaults(ctx context.Context, client client.Client, scheme *runtime.Scheme, consoleservice *v1beta1.ConsoleService) error {
@@ -298,7 +327,7 @@ func applyConsoleServiceDefaults(ctx context.Context, client client.Client, sche
 	}
 
 	if dirty {
-		// address-space-controller does not know the default values
+		// address-space-controller needs to know the default values, so we rewrite the object.
 		err := client.Update(ctx, consoleservice);
 		return err
 	}
@@ -348,13 +377,13 @@ func applyService(consoleService *v1beta1.ConsoleService, service *corev1.Servic
 }
 
 
-func (r *ReconcileConsoleService) reconcileRoute(ctx context.Context, consoleservice *v1beta1.ConsoleService) (reconcile.Result, error) {
+func (r *ReconcileConsoleService) reconcileRoute(ctx context.Context, consoleservice *v1beta1.ConsoleService) (reconcile.Result, *routev1.Route, error) {
 	if util.IsOpenshift() {
 		route := &routev1.Route{
 			ObjectMeta: metav1.ObjectMeta{Namespace: consoleservice.Namespace, Name: consoleservice.Name},
 		}
 		_, err := controllerutil.CreateOrUpdate(ctx, r.client, route, func(existing runtime.Object) error {
-			existingRoute := existing.(*routev1.Route)
+			route = existing.(*routev1.Route)
 
 			secretName := types.NamespacedName{
 				Name:      consoleservice.Spec.CertificateSecret.Name,
@@ -366,18 +395,20 @@ func (r *ReconcileConsoleService) reconcileRoute(ctx context.Context, consoleser
 				return err
 			}
 			cert := certsecret.Data["tls.crt"]
-			if err := controllerutil.SetControllerReference(consoleservice, existingRoute, r.scheme); err != nil {
+			if err := controllerutil.SetControllerReference(consoleservice, route, r.scheme); err != nil {
 				return err
 			}
-			return applyRoute(consoleservice, existingRoute, string(cert[:]))
+			return applyRoute(consoleservice, route, string(cert[:]))
 		})
 
 		if err != nil {
 			log.Error(err, "Failed reconciling Route")
-			return reconcile.Result{}, err
+			return reconcile.Result{}, nil, err
 		}
+		return reconcile.Result{}, route, nil
+	} else {
+		return reconcile.Result{}, nil, nil
 	}
-	return reconcile.Result{}, nil
 }
 
 func applyRoute(consoleservice *v1beta1.ConsoleService, route *routev1.Route, caCertificate string) error {
@@ -396,6 +427,10 @@ func applyRoute(consoleservice *v1beta1.ConsoleService, route *routev1.Route, ca
 		Port: &routev1.RoutePort{
 			TargetPort: intstr.FromString("https"),
 		},
+	}
+
+	if consoleservice.Spec.Host != nil {
+		route.Spec.Host = *consoleservice.Spec.Host
 	}
 	return nil
 }
