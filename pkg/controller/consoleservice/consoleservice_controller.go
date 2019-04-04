@@ -6,6 +6,8 @@
 package consoleservice
 
 import (
+	"encoding/base64"
+	"encoding/json"
 	"fmt"
 	"github.com/enmasseproject/enmasse/pkg/apis/admin/v1beta1"
 	"github.com/enmasseproject/enmasse/pkg/controller/authenticationservice"
@@ -21,6 +23,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/intstr"
+	"net/url"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
@@ -36,6 +39,9 @@ import (
 /*
 TODO automatically create the consoleservice CRD on openshift
 TODO on kubernetes, deal with the case where the consoleservice is not configure or is incomplete.
+TODO do we need console service account?
+TODO trim the CRD - the deployment, service names etc are superfluous.   However, being able to specify the route's hostname
+     from the CRD would be advantageous.
 TODO TLS for the HTTPD side car
 TODO Tidy up (minimise) Apache HTTPD conf
 TODO Tidy up this code - extract utility methods
@@ -196,7 +202,7 @@ func (r *ReconcileConsoleService) Reconcile(request reconcile.Request) (reconcil
 	}
 	requeue = requeue || result.Requeue
 
-	return reconcile.Result{}, nil
+	return reconcile.Result{Requeue: requeue}, nil
 }
 
 func applyConsoleServiceDefaults(ctx context.Context, client client.Client, scheme *runtime.Scheme, consoleservice *v1beta1.ConsoleService) error {
@@ -254,22 +260,45 @@ func applyConsoleServiceDefaults(ctx context.Context, client client.Client, sche
 
 		if consoleservice.Spec.DiscoveryMetadataURL == nil {
 			dirty = true
-			s := "https://openshift.default.svc/.well-known/oauth-authorization-server"
-			consoleservice.Spec.DiscoveryMetadataURL = &s
+			discoveryURL := "https://openshift.default.svc/.well-known/oauth-authorization-server"
 
-			// TODO workaround oauth-authorization-server document that refers to loopback i.e.
-			// oc cluster up without public ip
-			/*
-				var openshiftUrl string
-				openshiftUrl, err = util.OpenshiftUri()
+			openshiftUri, rewritten, err := util.OpenshiftUri()
+			if err != nil {
+				return err
+			}
+
+			if rewritten  {
+				// The well known metadata will be unusable
+				metadata, err := util.WellKnownOauthMetadata()
 				if err != nil {
-					return reconcile.Result{}, err
-				}
-				if openshiftUrl == "" || strings.Contains(openshiftUrl, "https://localhost:8443") || strings.Contains(openshiftUrl, "https://127.0.0.1:8443") {
-					openshiftUrl = fmt.Sprintf("https://%s:%s", util.GetEnvOrDefault("KUBERNETES_SERVICE_HOST", "172.30.0.1"), util.GetEnvOrDefault("KUBERNETES_SERVICE_PORT", "443"))
+					return err
 				}
 
-			 */
+				keys := []string{
+					"issuer",
+					"authorization_endpoint",
+					"token_endpoint",}
+
+				for _, k := range keys {
+					if u, ok := metadata[k]; ok {
+						metadata_url, err := url.Parse(u.(string))
+						if err != nil {
+							metadata_url.Host = openshiftUri.Host
+							metadata_url.Scheme = openshiftUri.Scheme
+							metadata[k] = metadata_url.String()
+						}
+					}
+				}
+
+				metadata_bytes, err := json.Marshal(metadata)
+				if err != nil {
+					return err
+				}
+
+				discoveryURL = "data:application/json;base64," + base64.StdEncoding.EncodeToString(metadata_bytes)
+			}
+
+			consoleservice.Spec.DiscoveryMetadataURL = &discoveryURL
 		}
 	} else {
 		if consoleservice.Spec.Scope == nil {
