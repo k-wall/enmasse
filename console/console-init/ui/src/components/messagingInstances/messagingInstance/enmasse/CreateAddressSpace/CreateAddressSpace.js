@@ -101,11 +101,11 @@ class CreateAddressSpace extends React.Component {
     ];
 
     return (
+
       <Aux>
         <Button variant="primary" onClick={this.toggleOpen}>Create</Button>
         {(
           <Wizard
-            key={new Date().getTime()}
             className=".section"
             isOpen={isOpen}
             title="Create an Instance"
