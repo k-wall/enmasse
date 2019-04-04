@@ -37,7 +37,6 @@ import (
 
 
 /*
-TODO automatically create the consoleservice CRD on openshift
 TODO on kubernetes, deal with the case where the consoleservice is not configure or is incomplete.
 TODO do we need console service account?
 TODO trim the CRD - the deployment, service names etc are superfluous.   However, being able to specify the route's hostname
@@ -51,6 +50,8 @@ TODO Add status to CRD:
         - In the kubernettes case, we could report the absence of the secret.
 
  */
+const CONSOLE_NAME = "console"
+
 var log = logf.Log.WithName("controller_consoleservice")
 
 // Gets called by parent "init", adding as to the manager
@@ -109,13 +110,11 @@ func add(mgr manager.Manager, r *ReconcileConsoleService) error {
 
 				reqs := make([]reconcile.Request, 0)
 
-				log.Info("KWDEBUG Route " + a.Meta.GetName())
 				if strings.HasPrefix(a.Meta.GetName(), "console-") {
 					list := &v1beta1.ConsoleServiceList{}
 					err = r.client.List(context.TODO(),  &client.ListOptions{}, list)
 					if err == nil {
 						for _, item := range list.Items {
-							log.Info("KWDEBUG Reconciling  " + item.ObjectMeta.Name)
 							request := reconcile.Request{
 								NamespacedName: types.NamespacedName{
 									Name:      item.ObjectMeta.Name,
@@ -134,6 +133,12 @@ func add(mgr manager.Manager, r *ReconcileConsoleService) error {
 		if err != nil {
 			return err
 		}
+	}
+
+	// Currently we need a single instance of console called "console", ensure that it exists.
+	err = ensureSingletonConsoleService(context.TODO(), metav1.ObjectMeta{Namespace: r.namespace, Name: CONSOLE_NAME}, r.client)
+	if err != nil {
+		log.Error(err, "Failed create singleton ConsoleService instance")
 	}
 
 	return nil
@@ -161,8 +166,14 @@ func (r *ReconcileConsoleService) Reconcile(request reconcile.Request) (reconcil
 	err := r.client.Get(ctx, request.NamespacedName, consoleservice)
 	if err != nil {
 		if k8errors.IsNotFound(err) {
-			reqLogger.Info("ConsoleService resource not found. Ignoring since object must be deleted")
-			return reconcile.Result{}, nil
+			if (CONSOLE_NAME == request.NamespacedName.Name) {
+				err = ensureSingletonConsoleService(ctx, metav1.ObjectMeta{Namespace: request.NamespacedName.Namespace,
+					Name: request.NamespacedName.Name}, r.client)
+				return reconcile.Result{}, err
+			} else {
+				reqLogger.Info("ConsoleService resource not found. Ignoring since object must be deleted")
+				return reconcile.Result{}, nil
+			}
 		}
 		// Error reading the object - requeue the request
 		reqLogger.Error(err, "Failed to get ConsoleService")
@@ -527,8 +538,6 @@ func applyDeployment(consoleservice *v1beta1.ConsoleService, deployment *appsv1.
 			install.ApplyVolumeMountSimple(container, "apps", "/apps", false);
 			install.ApplyVolumeMountSimple(container, "console-tls", "/etc/tls/private", true);
 
-			log.Info("KWDEBUG ", "secret", consoleservice.Spec.OauthClientSecret)
-
 			if consoleservice.Spec.OauthClientSecret != nil {
 				install.ApplyEnvSecret(container, "OAUTH2_PROXY_CLIENT_ID", "client-id", consoleservice.Spec.OauthClientSecret.Name)
 				install.ApplyEnvSecret(container, "OAUTH2_PROXY_CLIENT_SECRET", "client-secret", consoleservice.Spec.OauthClientSecret.Name)
@@ -693,7 +702,32 @@ func applyOauthSecret(secret *corev1.Secret) error {
 		secret.Data["client-id"] = []byte(secret.Name)
 	}
 
-
 	return nil
+}
+
+func ensureSingletonConsoleService(ctx context.Context, objectMeta metav1.ObjectMeta, c client.Client) error {
+
+	consoleservice := &v1beta1.ConsoleService{
+		ObjectMeta: objectMeta,
+	}
+	_, err := controllerutil.CreateOrUpdate(ctx, c, consoleservice, func(existing runtime.Object) error {
+		return nil
+	})
+
+	list := &v1beta1.ConsoleServiceList{}
+	opts := &client.ListOptions{}
+	err = c.List(ctx, opts, list)
+	if err != nil {
+		return err
+	}
+
+	for _, item := range list.Items {
+		if "console" != item.Name  {
+			err = c.Delete(ctx, &item, nil);
+			break;
+		}
+	}
+
+	return err
 }
 
