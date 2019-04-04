@@ -37,7 +37,6 @@ import (
 
 
 /*
-TODO on kubernetes, deal with the case where the consoleservice is not configure or is incomplete.
 TODO do we need console service account?
 TODO trim the CRD - the deployment, service names etc are superfluous.   However, being able to specify the route's hostname
      from the CRD would be advantageous.
@@ -229,11 +228,6 @@ func applyConsoleServiceDefaults(ctx context.Context, client client.Client, sche
 	}
 	if consoleservice.Spec.RouteName == nil {
 		consoleservice.Spec.RouteName = &consoleservice.Name
-		dirty = true
-	}
-	if consoleservice.Spec.ServiceAccountName == nil {
-		serviceaccount := "consoleservice"
-		consoleservice.Spec.ServiceAccountName = &serviceaccount
 		dirty = true
 	}
 	if consoleservice.Spec.CertificateSecret == nil {
@@ -459,12 +453,6 @@ func applyDeployment(consoleservice *v1beta1.ConsoleService, deployment *appsv1.
 			})
 		}
 
-		if util.IsOpenshift() && consoleservice.Spec.ServiceAccountName != nil {
-			install.ApplyEnv(container, "OPENSHIFT_SERVICE_ACCOUNT", func(envvar *corev1.EnvVar) {
-				envvar.Value = *consoleservice.Spec.ServiceAccountName;
-			})
-		}
-
 		if consoleservice.Spec.DiscoveryMetadataURL != nil {
 			install.ApplyEnv(container, "DISCOVERY_METADATA_URL", func(envvar *corev1.EnvVar) {
 				envvar.Value = *consoleservice.Spec.DiscoveryMetadataURL;
@@ -576,8 +564,6 @@ func applyDeployment(consoleservice *v1beta1.ConsoleService, deployment *appsv1.
 			}
 		})
 	}
-
-	deployment.Spec.Template.Spec.ServiceAccountName = *consoleservice.Spec.ServiceAccountName
 
 	deployment.Spec.Strategy = appsv1.DeploymentStrategy{
 		Type: appsv1.RecreateDeploymentStrategyType,

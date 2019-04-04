@@ -133,7 +133,6 @@ type ConsoleServiceSpec struct {
 	RouteName            *string                  `json:"routeName,omitempty"`
 	ServiceName          *string                  `json:"serviceName,omitempty"`
 	DeploymentName       *string                  `json:"deploymentName,omitempty"`
-	ServiceAccountName   *string                  `json:"serviceAccountName,omitempty"`
 }
 
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object

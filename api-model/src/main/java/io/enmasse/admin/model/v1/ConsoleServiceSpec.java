@@ -24,7 +24,7 @@ import java.util.Objects;
         inline = @Inline(type = Doneable.class, prefix = "Doneable", value = "done")
 )
 @JsonPropertyOrder({"discoveryMetadataURL", "oauthClientSecret", "certificateSecret",
-        "scope", "routeName", "serviceName", "deploymentName", "serviceAccountName"})
+        "scope", "routeName", "serviceName", "deploymentName"})
 @JsonInclude(JsonInclude.Include.NON_NULL)
 public class ConsoleServiceSpec extends AbstractWithAdditionalProperties {
 
@@ -35,7 +35,6 @@ public class ConsoleServiceSpec extends AbstractWithAdditionalProperties {
     private String routeName;
     private String serviceName;
     private String deploymentName;
-    private String serviceAccountName;
 
     @Override
     public boolean equals(Object o) {
@@ -48,13 +47,12 @@ public class ConsoleServiceSpec extends AbstractWithAdditionalProperties {
                 Objects.equals(scope, that.scope) &&
                 Objects.equals(routeName, that.routeName) &&
                 Objects.equals(serviceName, that.serviceName) &&
-                Objects.equals(deploymentName, that.deploymentName) &&
-                Objects.equals(serviceAccountName, that.serviceAccountName);
+                Objects.equals(deploymentName, that.deploymentName);
     }
 
     @Override
     public int hashCode() {
-        return Objects.hash(discoveryMetadataURL, oauthClientSecret, certificateSecret, scope, routeName, serviceName, deploymentName, serviceAccountName);
+        return Objects.hash(discoveryMetadataURL, oauthClientSecret, certificateSecret, scope, routeName, serviceName, deploymentName);
     }
 
     @Override
@@ -67,7 +65,6 @@ public class ConsoleServiceSpec extends AbstractWithAdditionalProperties {
                 ", routeName='" + routeName + '\'' +
                 ", serviceName='" + serviceName + '\'' +
                 ", deploymentName='" + deploymentName + '\'' +
-                ", serviceAccountName='" + serviceAccountName + '\'' +
                 '}';
     }
 
@@ -126,13 +123,4 @@ public class ConsoleServiceSpec extends AbstractWithAdditionalProperties {
     public void setDeploymentName(String deploymentName) {
         this.deploymentName = deploymentName;
     }
-
-    public String getServiceAccountName() {
-        return serviceAccountName;
-    }
-
-    public void setServiceAccountName(String serviceAccountName) {
-        this.serviceAccountName = serviceAccountName;
-    }
-
 }
