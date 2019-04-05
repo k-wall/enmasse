@@ -49,5 +49,6 @@ spec:
             caCertSecret:
               type: object
               properties:
-                name: string
+                name:
+                  type: string
 
