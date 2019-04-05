@@ -170,37 +170,49 @@ module.exports.ws_auth_handler = function (authz, env) {
 module.exports.init_auth_handler = function (openshift, env) {
     var discovery_uri = env.CONSOLE_OAUTH_DISCOVERY_URL;
     log.debug("Discovery url : %s", discovery_uri);
-    if (!openshift) {
-        return openid_connect.Issuer.discover(discovery_uri);
-    } else {
-        let discoveryUri = url.parse(discovery_uri, false);
-        return new Promise((resolve, reject) => {
-            https.get({
+    if (openshift) {
+        if (discovery_uri.startsWith("data:")) {
+            return new Promise((resolve, reject) => {
+                try {
+                    var b64string = discovery_uri.replace(/^data:.*,/, '');
+                    var data = Buffer.from(b64string, 'base64');
+                    resolve(JSON.parse(data));
+                } catch (e) {
+                    reject(e);
+                }
+            });
+        } else {
+            let discoveryUri = url.parse(discovery_uri, false);
+            return new Promise((resolve, reject) => {
+                https.get({
                     hostname: discoveryUri.hostname,
                     port: discoveryUri.port,
                     path: discoveryUri.path,
                     protocol: discoveryUri.protocol,
                     rejectUnauthorized: false,
                 }, (response) => {
-                log.info('GET %s => %s ', discovery_uri, response.statusCode);
-                response.setEncoding('utf8');
-                var data = '';
-                response.on('data', function (chunk) { data += chunk; });
-                response.on('end', function () {
-                    if (response.statusCode === 200) {
-                        try {
-                            resolve(JSON.parse(data));
-                        } catch (e) {
-                            reject(new Error(util.format('Could not parse message as JSON (%s): %s', e, data)));
+                    log.info('GET %s => %s ', discovery_uri, response.statusCode);
+                    response.setEncoding('utf8');
+                    var data = '';
+                    response.on('data', function (chunk) { data += chunk; });
+                    response.on('end', function () {
+                        if (response.statusCode === 200) {
+                            try {
+                                resolve(JSON.parse(data));
+                            } catch (e) {
+                                reject(new Error(util.format('Could not parse message as JSON (%s): %s', e, data)));
+                            }
+                        } else {
+                            var error = new Error(util.format('Failed to retrieve %s: %s %s', discovery_uri, response.statusCode, data));
+                            error.statusCode = response.statusCode;
+                            reject(error);
                         }
-                    } else {
-                        var error = new Error(util.format('Failed to retrieve %s: %s %s', discovery_uri, response.statusCode, data));
-                        error.statusCode = response.statusCode;
-                        reject(error);
-                    }
+                    });
                 });
             });
-        });
+        }
+    } else {
+        return openid_connect.Issuer.discover(discovery_uri);
     }
 };
 
@@ -209,7 +221,6 @@ module.exports.auth_handler = function (authz, env, handler, auth_context, opens
 
     set_defaults({rejectUnauthorized:false});
 
-    log.info("KWDEBUG openshift %s", openshift);
     setInterval(purge_stale_sessions.bind(null, sessions, 15*60*1000), 60*1000);
 
     var patch_handler =  function (request, response, next) {

@@ -115,9 +115,6 @@ ConsoleServer.prototype.ws_bind = function (server, env) {
     }});
     this.ws_server.on('connection', function (ws, request) {
         log.info('Accepted incoming websocket connection');
-
-
-        // KWDEBUG
         self.amqp_container.websocket_accept(ws, self.authz.get_authz_props(request));
     });
 };

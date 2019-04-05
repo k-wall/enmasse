@@ -300,7 +300,7 @@ func applyConsoleServiceDefaults(ctx context.Context, client client.Client, sche
 				for _, k := range keys {
 					if u, ok := metadata[k]; ok {
 						metadata_url, err := url.Parse(u.(string))
-						if err != nil {
+						if err == nil {
 							metadata_url.Host = openshiftUri.Host
 							metadata_url.Scheme = openshiftUri.Scheme
 							metadata[k] = metadata_url.String()
