@@ -44,7 +44,9 @@ public class Receiver extends ClientHandlerBase<List<Message>> {
         receiver.setPrefetch(0);
         receiver.handler((protonDelivery, message) -> {
             messages.add(message);
-            messageCount.incrementAndGet();
+            int i = messageCount.incrementAndGet();
+            log.info("Got message {}", i);
+
             protonDelivery.disposition(Accepted.getInstance(), true);
             if (done.test(message)) {
                 resultPromise.complete(messages);
@@ -64,18 +66,25 @@ public class Receiver extends ClientHandlerBase<List<Message>> {
         });
 
         receiver.closeHandler(closed -> {
-            if (receiver.getRemoteCondition() != null && LinkError.REDIRECT.equals(receiver.getRemoteCondition().getCondition())) {
-                String relocated = (String) receiver.getRemoteCondition().getInfo().get("address");
-                log.info("Receiver link redirected to '" + relocated + "'");
-                Source newSource = linkOptions.getSource();
-                newSource.setAddress(relocated);
-                String newLinkName = linkOptions.getLinkName().orElse(UUID.randomUUID().toString());
 
-                vertx.runOnContext(id -> connectionOpened(conn, newLinkName, newSource));
-            } else {
-                handleError(conn, receiver.getRemoteCondition());
+            try {
+                if (receiver.getRemoteCondition() != null && LinkError.REDIRECT.equals(receiver.getRemoteCondition().getCondition())) {
+                    String relocated = (String) receiver.getRemoteCondition().getInfo().get("address");
+                    log.info("Receiver link redirected to '" + relocated + "'");
+                    Source newSource = linkOptions.getSource();
+                    newSource.setAddress(relocated);
+                    String newLinkName = linkOptions.getLinkName().orElse(UUID.randomUUID().toString());
+
+                    vertx.runOnContext(id -> connectionOpened(conn, newLinkName, newSource));
+                } else {
+                    handleError(conn, receiver.getRemoteCondition());
+                }
+                receiver.close();
+            } finally {
+                if (!resultPromise.isDone()) {
+                    resultPromise.completeExceptionally(closed.cause() != null ? closed.cause() : new RuntimeException(String.format("Closed unexpectedly having received %d message(s)", messageCount)));
+                }
             }
-            receiver.close();
         });
         receiver.open();
     }

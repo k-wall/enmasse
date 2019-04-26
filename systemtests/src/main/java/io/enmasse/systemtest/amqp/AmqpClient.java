@@ -84,10 +84,14 @@ public class AmqpClient implements AutoCloseable {
         } catch (Exception e) {
             resultPromise.completeExceptionally(e);
         }
+
+
         return new ReceiverStatus() {
             @Override
             public Future<List<Message>> getResult() {
                 return resultPromise;
+
+
             }
 
             @Override

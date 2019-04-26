@@ -210,21 +210,17 @@ public class Executor {
          */
         public Future<String> read() {
             return CompletableFuture.supplyAsync(() -> {
-                Scanner scanner = new Scanner(is);
-                try {
-                    log.info("Reading stream {}", is);
+                try (Scanner scanner = new Scanner(is)) {
+                    log.debug("Reading stream {}", is);
                     while (scanner.hasNextLine()) {
                         data.append(scanner.nextLine());
                         if (appendLineSeparator) {
                             data.append(System.getProperty("line.separator"));
                         }
                     }
-                    scanner.close();
                     return data.toString();
                 } catch (Exception e) {
                     throw new CompletionException(e);
-                } finally {
-                    scanner.close();
                 }
             }, runnable -> new Thread(runnable).start());
         }
