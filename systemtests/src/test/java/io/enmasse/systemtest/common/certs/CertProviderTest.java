@@ -10,7 +10,7 @@ import io.enmasse.systemtest.*;
 import io.enmasse.systemtest.amqp.AmqpClient;
 import io.enmasse.systemtest.apiclients.OpenshiftCertValidatorApiClient;
 import io.enmasse.systemtest.bases.TestBase;
-import io.enmasse.systemtest.common.api.ApiServerTest;
+import io.enmasse.systemtest.mqtt.MqttUtils;
 import io.enmasse.systemtest.standard.QueueTest;
 import io.enmasse.systemtest.utils.AddressSpaceUtils;
 import io.enmasse.systemtest.utils.AddressUtils;
@@ -22,6 +22,7 @@ import io.vertx.ext.web.client.WebClient;
 import io.vertx.ext.web.client.WebClientOptions;
 import org.eclipse.paho.client.mqttv3.IMqttClient;
 import org.eclipse.paho.client.mqttv3.MqttConnectOptions;
+import org.eclipse.paho.client.mqttv3.MqttMessage;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Tag;
@@ -34,18 +35,20 @@ import javax.net.ssl.SSLSocketFactory;
 import javax.net.ssl.TrustManagerFactory;
 import java.io.ByteArrayInputStream;
 import java.io.InputStream;
+import java.nio.charset.StandardCharsets;
 import java.security.KeyStore;
 import java.security.SecureRandom;
 import java.security.cert.CertificateFactory;
 import java.security.cert.X509Certificate;
-import java.util.Arrays;
-import java.util.Base64;
-import java.util.Collections;
-import java.util.Optional;
+import java.util.*;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
+import java.util.stream.Collectors;
+import java.util.stream.IntStream;
 
 import static io.enmasse.systemtest.TestTag.isolated;
+import static org.hamcrest.CoreMatchers.is;
+import static org.hamcrest.MatcherAssert.assertThat;
 import static org.junit.jupiter.api.Assertions.fail;
 
 @Tag(isolated)
@@ -337,7 +340,7 @@ class CertProviderTest extends TestBase {
     private void testCertProvider(AmqpClient amqpClient, IMqttClient mqttClient) throws Exception {
         QueueTest.runQueueTest(amqpClient, queue);
         mqttClient.connect();
-        ApiServerTest.simpleMQTTSendReceive(topic, mqttClient, 3);
+        simpleMQTTSendReceive(topic, mqttClient, 3);
         mqttClient.disconnect();
     }
 
@@ -375,5 +378,23 @@ class CertProviderTest extends TestBase {
         return context.getSocketFactory();
     }
 
+    public static void simpleMQTTSendReceive(Address dest, IMqttClient client, int msgCount) throws Exception {
+        List<MqttMessage> messages = IntStream.range(0, msgCount).boxed().map(i -> {
+            MqttMessage m = new MqttMessage();
+            m.setPayload(String.format("mqtt-simple-send-receive-%s", i).getBytes(StandardCharsets.UTF_8));
+            m.setQos(1);
+            return m;
+        }).collect(Collectors.toList());
 
+        List<CompletableFuture<MqttMessage>> receiveFutures = MqttUtils.subscribeAndReceiveMessages(client, dest.getSpec().getAddress(), messages.size(), 1);
+        List<CompletableFuture<Void>> publishFutures = MqttUtils.publish(client, dest.getSpec().getAddress(), messages);
+
+        int publishCount = MqttUtils.awaitAndReturnCode(publishFutures, 1, TimeUnit.MINUTES);
+        assertThat("Incorrect count of messages published",
+                publishCount, is(messages.size()));
+
+        int receivedCount = MqttUtils.awaitAndReturnCode(receiveFutures, 1, TimeUnit.MINUTES);
+        assertThat("Incorrect count of messages received",
+                receivedCount, is(messages.size()));
+    }
 }
