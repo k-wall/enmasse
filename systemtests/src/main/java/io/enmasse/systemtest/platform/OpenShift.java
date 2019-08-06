@@ -13,17 +13,12 @@ import io.fabric8.kubernetes.api.model.Service;
 import io.fabric8.kubernetes.api.model.ServicePort;
 import io.fabric8.kubernetes.client.Config;
 import io.fabric8.kubernetes.client.ConfigBuilder;
-import io.fabric8.kubernetes.client.utils.HttpClientUtils;
 import io.fabric8.openshift.api.model.Route;
 import io.fabric8.openshift.api.model.RouteBuilder;
 import io.fabric8.openshift.client.DefaultOpenShiftClient;
 import io.fabric8.openshift.client.OpenShiftClient;
 import io.fabric8.openshift.client.OpenShiftConfig;
-import okhttp3.OkHttpClient;
-import okhttp3.Protocol;
 import org.slf4j.Logger;
-
-import java.util.Collections;
 
 /**
  * Handles interaction with openshift cluster
@@ -36,17 +31,12 @@ public class OpenShift extends Kubernetes {
             final Environment instance = Environment.getInstance();
             Config config = new ConfigBuilder().withMasterUrl(environment.getApiUrl())
                     .withOauthToken(environment.getApiToken())
+                    .withHttp2Disable(true) //  // Workaround https://github.com/square/okhttp/issues/3146
+                    .withConnectionTimeout((int)instance.getKubernetesApiConnectTimeout().toMillis())
+                    .withRequestTimeout((int)instance.getKubernetesApiWriteTimeout().toMillis())
                     .build();
 
-            OkHttpClient httpClient = HttpClientUtils.createHttpClient(config);
-            // Workaround https://github.com/square/okhttp/issues/3146
-            httpClient = httpClient.newBuilder()
-                    .protocols(Collections.singletonList(Protocol.HTTP_1_1))
-                    .connectTimeout(instance.getKubernetesApiConnectTimeout())
-                    .writeTimeout(instance.getKubernetesApiWriteTimeout())
-                    .readTimeout(instance.getKubernetesApiReadTimeout())
-                    .build();
-            return new DefaultOpenShiftClient(httpClient, new OpenShiftConfig(config));
+            return new DefaultOpenShiftClient(new OpenShiftConfig(config));
         });
     }
 

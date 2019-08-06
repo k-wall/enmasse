@@ -14,13 +14,11 @@ import io.fabric8.kubernetes.api.model.ServicePort;
 import io.fabric8.kubernetes.client.Config;
 import io.fabric8.kubernetes.client.ConfigBuilder;
 import io.fabric8.kubernetes.client.DefaultKubernetesClient;
-import io.fabric8.kubernetes.client.utils.HttpClientUtils;
-import okhttp3.OkHttpClient;
-import okhttp3.Protocol;
 import org.slf4j.Logger;
 
+import java.time.temporal.ChronoUnit;
+import java.time.temporal.TemporalUnit;
 import java.util.Arrays;
-import java.util.Collections;
 
 public class Minikube extends Kubernetes {
     private static Logger log = CustomLogger.getLogger();
@@ -28,17 +26,13 @@ public class Minikube extends Kubernetes {
     protected Minikube(String globalNamespace) {
         super(globalNamespace, () -> {
             final Environment instance = Environment.getInstance();
-            Config config = new ConfigBuilder().build();
-
-            OkHttpClient httpClient = HttpClientUtils.createHttpClient(config);
-            // Workaround https://github.com/square/okhttp/issues/3146
-            httpClient = httpClient.newBuilder()
-                    .protocols(Collections.singletonList(Protocol.HTTP_1_1))
-                    .connectTimeout(instance.getKubernetesApiConnectTimeout())
-                    .writeTimeout(instance.getKubernetesApiWriteTimeout())
-                    .readTimeout(instance.getKubernetesApiReadTimeout())
+            Config config = new ConfigBuilder()
+                    .withHttp2Disable(true) // Workaround https://github.com/square/okhttp/issues/3146
+                    .withConnectionTimeout((int)instance.getKubernetesApiConnectTimeout().toMillis())
+                    .withRequestTimeout((int)instance.getKubernetesApiWriteTimeout().toMillis())
                     .build();
-            return new DefaultKubernetesClient(httpClient, config);
+
+            return new DefaultKubernetesClient(config);
         });
     }
 
