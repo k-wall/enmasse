@@ -23,6 +23,10 @@ var kubernetes = require('../lib/kubernetes.js');
 var Ragent = require('../lib/ragent.js');
 var tls_options = require('../lib/tls_options.js');
 var myutils = require('../lib/utils.js');
+if (process.env.NODE_HEAPDUMP) {
+    log.info("Installing heapdump, send SIGUSR1 to me to get a dump");
+    var heapdump = require('heapdump');
+}
 
 function bind_event(source, event, target, method) {
     source.on(event, target[method || event].bind(target));
@@ -82,6 +86,10 @@ function start(env) {
                         exitHandler();
                     });
                 });
+
+                setInterval(() => {
+                    log.info("Heap statistics : %j", v8.getHeapStatistics());
+                }, 30000);
             }).catch((e) => {log.error("Failed to listen ", e)})
 
         });
