@@ -30,6 +30,7 @@ import io.fabric8.kubernetes.client.NamespacedKubernetesClient;
 import io.fabric8.kubernetes.client.utils.HttpClientUtils;
 import io.vertx.core.*;
 import okhttp3.OkHttpClient;
+import okhttp3.logging.HttpLoggingInterceptor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -41,6 +42,7 @@ import java.security.cert.CertificateFactory;
 import java.time.Clock;
 import java.util.List;
 import java.util.Map;
+import java.util.function.Supplier;
 
 public class ApiServer extends AbstractVerticle {
     private static final Logger log = LoggerFactory.getLogger(ApiServer.class.getName());
@@ -107,9 +109,15 @@ public class ApiServer extends AbstractVerticle {
         Metrics metrics = new Metrics();
 
         HTTPHealthServer httpHealthServer = new HTTPHealthServer(options.getVersion(), metrics);
-        HTTPServer httpServer = new HTTPServer(addressSpaceApi, schemaProvider, authApi, userApi, options, clientCa, requestHeaderClientCa, clock, authenticationServiceRegistry, apiHeaderConfig);
 
-        vertx.deployVerticle(httpServer, new DeploymentOptions().setWorker(true), result -> {
+        final DeploymentOptions deploymentOptions = new DeploymentOptions();
+        deploymentOptions.setWorker(true);
+        deploymentOptions.setInstances(Runtime.getRuntime().availableProcessors());
+
+        String finalClientCa = clientCa;
+        String finalRequestHeaderClientCa = requestHeaderClientCa;
+        ApiHeaderConfig finalApiHeaderConfig = apiHeaderConfig;
+        vertx.deployVerticle(() -> new HTTPServer(addressSpaceApi, schemaProvider, authApi, userApi, options, finalClientCa, finalRequestHeaderClientCa, clock, authenticationServiceRegistry, finalApiHeaderConfig), deploymentOptions.setWorker(true), result -> {
             if (result.succeeded()) {
                 vertx.deployVerticle(httpHealthServer, ar -> {
                     if (ar.succeeded()) {
