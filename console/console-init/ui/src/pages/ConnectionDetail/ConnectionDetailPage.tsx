@@ -106,7 +106,7 @@ export default function ConnectionDetailPage() {
     version: getProductFilteredValue(connection.spec.properties, "version"),
     protocol: connection.spec.protocol.toUpperCase(),
     encrypted: connection.spec.encrypted || false,
-    creationTimestamp: connection.objectMeta.creationTimestamp,
+    creationTimestamp: connection.metadata.creationTimestamp,
     messageIn: getFilteredValue(connection.metrics, "enmasse_messages_in"),
     messageOut: getFilteredValue(connection.metrics, "enmasse_messages_out"),
     //Change this logic
