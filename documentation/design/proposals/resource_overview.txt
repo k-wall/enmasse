@@ -9,8 +9,8 @@ rectangle "MessagingPlan"as MP
 rectangle "MessagingAddress"as MA
 rectangle "MessagingAddressPlan"as MAP
 
-MT -up->> MI
-MP <<-right- MT
+MT -up->> MI : opt ref
+MP <<-right- MT : opt ref
 
-MA <<-left- MAP
+MA <<-left- MAP : opt ref
 @enduml
