@@ -4,7 +4,7 @@ skinparam rectangle<<behavior>> {
 }
 
 
-package "myappns1" {
+node "myappns1" {
 rectangle "MessagingTenant"as MT
 rectangle "MessagingAddress"as MA
 }
