@@ -3,14 +3,21 @@ skinparam rectangle<<behavior>> {
 	roundCorner 25
 }
 
-rectangle "MessagingInfra"as MI
+
+package "MessagingTenant" {
 rectangle "MessagingTenant"as MT
-rectangle "MessagingPlan"as MP
 rectangle "MessagingAddress"as MA
+}
+
+package "enmasse-infra" {
+rectangle "MessagingInfra"as MI
+rectangle "MessagingPlan"as MP
 rectangle "MessagingAddressPlan"as MAP
+}
+
+
 
 MT -up->> MI : opt ref
-MP <<-right- MT : opt ref
-
 MAP <<-left- MA : opt ref
+MP <<-right- MT : opt ref
 @enduml
