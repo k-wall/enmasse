@@ -4,23 +4,18 @@ skinparam rectangle<<behavior>> {
 }
 
 
-node "myappns1" {
-rectangle "MessagingTenant"as MT
-rectangle "MessagingAddress"as MA
+package "myapp" <<namespace>> {
+rectangle "myaddr" <<MessagingAddress>> as MA
+rectangle "default" <<MessagingTenant>> as MT
 }
 
-package "enmasse-infra" {
-rectangle "MessagingInfra"as MI
-together {
+rectangle "prod" <<MessagingInfra>> as MI
 
-rectangle "MessagingPlan"as MP
-rectangle "MessagingAddressPlan"as MAP
-}
-}
+rectangle "plan1" <<MessagingPlan>> as MP
+rectangle "addrplan1" <<MessagingAddressPlan>> as MAP
 
 
-
-MT -d-> MI : opt ref
-MAP <- MA : opt ref
-MP <- MT : opt ref
+MT -> MI : opt ref
+MAP <-d- MA : opt ref
+MP <-d- MT : opt ref
 @enduml
