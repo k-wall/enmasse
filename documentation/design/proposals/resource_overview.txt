@@ -12,5 +12,5 @@ rectangle "MessagingAddressPlan"as MAP
 MT -up->> MI : opt ref
 MP <<-right- MT : opt ref
 
-MA <<-left- MAP : opt ref
+MAP <<-left- MA : opt ref
 @enduml
