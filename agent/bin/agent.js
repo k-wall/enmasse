@@ -20,10 +20,12 @@ var log = require("../lib/log.js").logger();
 var AddressSource = require('../lib/internal_address_source.js');
 var AddressSpacePlanSource = require('../lib/internal_addressspaceplan_source.js');
 var AddressPlansSource = require('../lib/internal_addressplan_source.js');
+var BrokerAddressSettings = require('../lib/broker_address_settings.js');
 var ConsoleServer = require('../lib/console_server.js');
 var kubernetes = require('../lib/kubernetes.js');
 var Ragent = require('../lib/ragent.js');
 var tls_options = require('../lib/tls_options.js');
+var myutils = require('../lib/utils.js');
 
 function bind_event(source, event, target, method) {
     source.on(event, target[method || event].bind(target));
@@ -37,6 +39,7 @@ function start(env) {
             var address_space_plan_source = new AddressSpacePlanSource(env);
             var address_plans_source = new AddressPlansSource(env);
             var address_source = new AddressSource(env);
+            var address_settings = new BrokerAddressSettings(env);
 
             var console_server = new ConsoleServer(env, openshift);
             bind_event(address_source, 'addresses_defined', console_server.addresses);
@@ -47,13 +50,14 @@ function start(env) {
                     bind_event(address_source, 'addresses_defined', console_server.metrics);
                     console_server.listen_health(env);
                     var event_logger = env.ENABLE_EVENT_LOGGER === 'true' ? kubernetes.post_event : undefined;
-                    var bc = require('../lib/broker_controller.js').create_agent(event_logger);
+                    var bc = require('../lib/broker_controller.js').create_agent(event_logger, address_settings.get_address_settings_async.bind(address_settings));
                     bind_event(bc, 'address_stats_retrieved', console_server.addresses, 'update_existing');
                     bind_event(bc, 'connection_stats_retrieved', console_server.connections, 'set');
                     bind_event(bc, 'address_stats_retrieved', address_source, 'check_status');
                     bind_event(address_source, 'addresses_defined', bc);
                     bind_event(address_plans_source, 'addressplans_defined', address_source, 'check_address_plans');
                     bind_event(address_space_plan_source, 'addressspaceplan_defined', address_source, 'check_address_plans');
+
                     bc.connect(tls_options.get_client_options({
                         host: env.BROKER_SERVICE_HOST, port: env.BROKER_SERVICE_PORT, username: 'console',
                         idle_time_out: 'AMQP_IDLE_TIMEOUT' in process.env ? process.env.AMQP_IDLE_TIMEOUT : 300000
@@ -70,6 +74,11 @@ function start(env) {
                     var ragent = new Ragent();
                     ragent.disable_connectivity = true;
                     bind_event(address_source, 'addresses_ready', ragent, 'sync_addresses');
+
+                    ragent.broker_address_settings = address_settings.get_address_settings_async.bind(address_settings);
+
+                    bind_event(address_source, 'addresses_ready', ragent, 'sync_addresses');
+                    bind_event(address_source, 'addresses_plans_changed', ragent, 'sync_address_addressplan');
                     ragent.start_listening(env);
                     ragent.listen_health({HEALTH_PORT:8888});
                 }

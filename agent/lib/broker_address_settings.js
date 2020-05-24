@@ -18,102 +18,55 @@
 var log = require("./log.js").logger();
 var kubernetes = require('./kubernetes.js');
 var myutils = require('./utils.js');
+var events = require('events');
+var util = require('util');
 
-function kubernetes_resource_compare(a, b) {
-    return myutils.string_compare(a.metadata.name, b.metadata.name);
-}
-
-function extract_address_plan(object) {
-    try {
-        return JSON.parse(object.data['definition']);
-    } catch (e) {
-        log.error('Failed to parse definition for address plan: %s %j', e, object);
-    }
-}
-
-function required_broker_resource(plan) {
-    var brokerRequired = plan.requiredResources ? plan.requiredResources.filter(function (o) { return o.name === 'broker'; })[0] : undefined;
-    return brokerRequired ? brokerRequired.credit : undefined;
-}
-
-function same_broker_resource(a, b) {
-    return required_broker_resource(a) === required_broker_resource(b);
-}
 
 function BrokerAddressSettings(config) {
-    this.watcher = kubernetes.watch('configmaps', myutils.merge({selector: 'type=address-plan'}, config));
-    this.watcher.on('updated', this.updated.bind(this));
-    this.required_broker_resource = {};
-    this.last = undefined;
+    this.config = config || {};
+    this.selector = "";
+    this.broker_settings = {};
+    this.global_max_size = this.read_global_max_size();
+    events.EventEmitter.call(this);
 }
 
-BrokerAddressSettings.prototype.wait_for_plans = function () {
-    var self = this;
-    return new Promise(function (resolve, reject) {
-        self.watcher.once('updated', function () {
-            log.info('plans have been retrieved');
-        });
-    });
-}
+util.inherits(BrokerAddressSettings, events.EventEmitter);
 
-BrokerAddressSettings.prototype.update_settings = function (plan) {
-    var r = required_broker_resource(plan);
-    if (r && r > 0 && r < 1) {
-        this.required_broker_resource[plan.metadata.name] = r;
-        log.info('updated required broker resource for %s: %d', plan.metadata.name, this.required_broker_resource[plan.metadata.name]);
-    }
-};
+BrokerAddressSettings.prototype.generate_address_settings = function (address, global_max_size) {
+    log.info('address: %j', address);
+    var planStatus = address.status.planStatus;
+    if (planStatus && planStatus.resources && planStatus.resources.broker > 0) {
 
-BrokerAddressSettings.prototype.generate_address_settings = function (plan, global_max_size) {
-    if (global_max_size) {
-        var r = this.required_broker_resource[plan];
-        if (r) {
+        var r = planStatus.resources.broker;
+        var p = planStatus.partitions;
+        var allocation = (r && p) ? r / p : (r) ? r : undefined;
+        if (allocation) {
             return {
-                maxSizeBytes: r * global_max_size,
-                addressFullMessagePolicy: 'FAIL'
+                maxSizeBytes: Math.round(allocation * global_max_size)
             };
-        } else {
-            log.info('no broker resource required for %s, therefore not applying address settings', plan);
         }
-    } else {
-        log.info('no global max, therefore not applying address settings');
     }
+    log.debug('no broker resource required for %s, therefore not applying address settings', planStatus.name);
 };
 
-BrokerAddressSettings.prototype.delete_settings = function (plan) {
-    delete this.required_broker_resource[plan.metadata.name];
-    log.info('deleted required broker resource for %s', plan.metadata.name);
-};
-
-BrokerAddressSettings.prototype.updated = function (objects) {
-    var plans = objects.map(extract_address_plan).filter(required_broker_resource);
-    plans.sort(kubernetes_resource_compare);
-    var changes = myutils.changes(this.last, plans, kubernetes_resource_compare, same_broker_resource);
-    this.last = plans;
-    if (changes) {
-        log.info('address plans: %s', changes.description);
-        changes.added.map(this.update_settings.bind(this));
-        changes.modified.map(this.update_settings.bind(this));
-        changes.removed.map(this.delete_settings.bind(this));
-    }
+BrokerAddressSettings.prototype.read_global_max_size = function () {
+    return this.config.BROKER_GLOBAL_MAX_SIZE ? myutils.parseToBytes(this.config.BROKER_GLOBAL_MAX_SIZE) : 0;
 };
 
 BrokerAddressSettings.prototype.get_address_settings_async = function (address, global_max_size_promise) {
     var self = this;
-    if (this.last === undefined) {
-        return this.wait_for_plans().then(function () {
-            return global_max_size_promise.then(function (global_max_size) {
-                var settings = self.generate_address_settings(address.plan, global_max_size);
-                log.info('using settings %j for %s', settings, address.address);
-                return settings;
-            });
+    if (self.global_max_size > 0) {
+        return Promise.resolve(self.generate_address_settings(address, self.global_max_size));
+    } else if (global_max_size_promise) {
+        return global_max_size_promise.then(function (global_max_size) {
+            return Promise.resolve(self.generate_address_settings(address, global_max_size));
+        }).catch(function (e) {
+            log.debug('no global max, therefore not applying address settings %s', e);
+            return Promise.reject(e);
         });
     } else {
-        return global_max_size_promise.then(function (global_max_size) {
-            var settings = self.generate_address_settings(address.plan, global_max_size);
-            log.info('using settings %j for %s', settings, address.address);
-            return settings;
-        });
+        log.debug('no global max, therefore not applying address settings');
+        return Promise.resolve();
     }
 };
 

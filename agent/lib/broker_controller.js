@@ -26,11 +26,19 @@ var plimit = require('p-limit');
 var crypto = require('crypto');
 var uuidv5 = require('uuid/v5');
 
-function BrokerController(event_sink) {
+function BrokerController(event_sink, get_address_settings) {
     events.EventEmitter.call(this);
     this.check_in_progress = false;
     this.post_event = event_sink || function (event) { log.debug('event: %j', event); };
-    this.serial_sync = require('./utils.js').serialize(this._sync_addresses_and_forwarders.bind(this));
+    if (get_address_settings) {
+        var self = this;
+        this.get_address_settings = function (a) {
+            return get_address_settings(a, self.broker.getGlobalMaxSize());
+        }
+    } else {
+        this.get_address_settings = function () { return Promise.resolve(); };
+    }
+    this.serial_sync = myutils.serialize(this._sync_addresses_and_forwarders.bind(this));
     this.addresses_synchronized = false;
     this.busy_count = 0;
     this.retrieve_count = 0;
@@ -66,11 +74,13 @@ BrokerController.prototype.close = function () {
 };
 
 BrokerController.prototype.on_connection_open = function (context) {
+    var self = this;
     this.broker = new artemis.Artemis(context.connection);
     this.id = context.connection.container_id;
     log.info('[%s] broker controller ready', this.id);
-    this.check_broker_addresses();
-    this.emit('ready');
+    this.check_broker_addresses().then(function () {
+            self.emit('ready');
+        });
 };
 
 BrokerController.prototype.set_connection = function (connection) {
@@ -84,9 +94,22 @@ BrokerController.prototype.addresses_defined = function (addresses) {
     return this.check_broker_addresses();
 };
 
+BrokerController.prototype.check_address_settings = function () {
+    if (this.broker !== undefined && this.addresses !== undefined) {
+        this.sync_address_addressplan(this.addresses);
+    }
+};
+
 BrokerController.prototype.sync_addresses = function (addresses) {
     this.addresses = addresses.reduce(function (map, a) { map[a.address] = a; return map; }, {});
     return this.serial_sync();
+};
+
+BrokerController.prototype.sync_address_addressplan = function (addresses) {
+    var limit = plimit(250);
+    let update_address_setting_fn = limit.bind(null, this.update_address_setting.bind(this));
+
+    return Promise.all(addresses.map(update_address_setting_fn));
 };
 
 BrokerController.prototype.close_connection = function (connection) {
@@ -248,6 +271,21 @@ function is_not_internal(conn) {
     return conn.user !== undefined && conn.user.match('^agent.[a-z0-9]+$') == null; //Can't get properties or anything else on which to base decision yet
 }
 
+function compare_address_settings(orig_address_settings, new_address_settings) {
+    for (var name in orig_address_settings) {
+        log.debug('comparing %s: %s %s', name, orig_address_settings[name], new_address_settings[name])
+        if (new_address_settings[name]) {
+            var compare = myutils.string_compare(orig_address_settings[name], new_address_settings[name]);
+            if (compare != 0) {
+                return compare;
+            }
+        } else {
+            //Ignoring settings that are from the broker & not in the new calculated set.
+        }
+    }
+    return 0;
+}
+
 BrokerController.prototype.retrieve_stats = function () {
     var self = this;
     if (this.broker !== undefined) {
@@ -298,7 +336,6 @@ BrokerController.prototype.retrieve_stats = function () {
                 log.error('[%s] error retrieving stats: %s', self.id, error);
             });
     } else {
-        log.info('Unable to retrieve stats, no broker object');
         return Promise.resolve();
     }
 };
@@ -386,8 +423,36 @@ function translate(addresses_in, excluded_names, excluded_types) {
     return addresses_out;
 }
 
+BrokerController.prototype.update_address_setting = function (a) {
+    var self = this;
+    var name = a.metadata.name;
+    return self.broker.getAddressSettings(name).then(function (orig_settings) {
+        return self.get_address_settings(a).then(function (new_settings) {
+            if (new_settings) {
+                if (compare_address_settings(orig_settings, new_settings) !== 0) {
+                    log.debug('[%s] Updating address settings %s', self.id, name);
+                        return self.broker.addAddressSettings(name, new_settings);
+                } else {
+                    log.debug('[%s] Address settings match for %s: not updating', self.id, name);
+                    return Promise.resolve();
+                }
+            } else {
+                return Promise.resolve();
+                //Settings weren't created, and reason is already logged. Most likely broker resource not required.
+            }
+        }).catch(function (error) {
+            log.error('[%s] Failed to create new address setting %s: %s', self.id, name, error);
+            return Promise.reject(error);
+        });
+    }).catch(function (error) {
+        log.error('[%s] Failed to retrieve brokers address setting: %s', self.id, name, error);
+        return Promise.reject(error);
+    });
+}
+
 BrokerController.prototype.delete_address = function (a) {
     var self = this;
+
     if (a.type === 'queue') {
         log.info('[%s] Deleting queue "%s"...', self.id, a.address);
         return self.broker.destroyQueue(a.address).then(function () {
@@ -429,14 +494,14 @@ BrokerController.prototype.delete_address_and_settings = function (a) {
         log.info('[%s] Deleted address-settings for "%s"', self.id, a.address);
         return self.delete_address(a);
     }).catch(function (error) {
-        log.error('[%s] Failed to delete address settings for "%s": %s', self.id, a.address, error);
+        log.error('[%s] Failed to delete address setting for "%s": %s', self.id, a.address, error);
         return self.delete_address(a);
     });
 };
 
 BrokerController.prototype.delete_addresses = function (addresses) {
     var limit = plimit(250);
-    let delete_fn = limit.bind(null, this.delete_address.bind(this));
+    let delete_fn = limit.bind(null, this.delete_address_and_settings.bind(this));
     return Promise.all(addresses.map(delete_fn));
 };
 
@@ -476,21 +541,10 @@ BrokerController.prototype.create_address = function (a) {
     }
 };
 
-BrokerController.prototype.create_address_and_settings = function (a, settings) {
-    var self = this;
-    log.info('[%s] Creating address-settings for "%s": %j...', self.id, a.address, settings);
-    return self.broker.addAddressSettings(a.address, settings).then(function() {
-        log.info('[%s] Created address-settings for "%s": %j', self.id, a.address, settings);
-        return self.create_address(a);
-    }).catch(function (error) {
-        log.error('[%s] Failed to create address settings for "%s": %s', self.id, a.address, error);
-        return self.create_address(a);
-    });
-};
-
 BrokerController.prototype.create_addresses = function (addresses) {
+    var self = this;
     var limit = plimit(250);
-    let create_fn = limit.bind(null, this.create_address.bind(this));
+    let create_fn = limit.bind(null, self.create_address.bind(this));
     return Promise.all(addresses.map(create_fn));
 };
 
@@ -549,8 +603,8 @@ BrokerController.prototype._sync_broker_addresses = function (retry) {
         var actual = translate(results, excluded_addresses, self.excluded_types);
         var stale = values(difference(actual, self.addresses, same_address));
         var missing = values(difference(self.addresses, actual, same_address));
-        log.debug('[%s] checking addresses, desired=%j, actual=%j => delete %j and create %j', self.id, values(self.addresses).map(address_and_type), values(actual),
-                  stale.map(address_and_type), missing.map(address_and_type));
+        log.info('[%s] checking addresses, desired=%j, actual=%j => delete %j and create %j', self.id, values(self.addresses).map(address_and_type), values(actual),
+            stale.map(address_and_type), missing.map(address_and_type));
         self._set_sync_status(stale.length, missing.length);
         return self.delete_addresses(stale).then(
             function () {
@@ -569,7 +623,7 @@ BrokerController.prototype._sync_broker_addresses = function (retry) {
 BrokerController.prototype.destroy_connector = function (connector) {
     var self = this;
     log.info('[%s] Deleting connector for "%s"...', self.id, connector.name);
-    return self.broker.destroyConnectorService(connector.name).then(function() {
+    return self.broker.destroyConnectorService(connector.name).then(function () {
         log.info('[%s] Deleted connector for "%s"', self.id, connector.name);
     }).catch(function (error) {
         log.error('[%s] Failed to delete connector for "%s": %s', self.id, connector.name, error);
@@ -579,7 +633,7 @@ BrokerController.prototype.destroy_connector = function (connector) {
 BrokerController.prototype.create_connector = function (connector) {
     var self = this;
     log.info('[%s] Creating connector "%j"...', self.id, connector);
-    return self.broker.createConnectorService(connector).then(function() {
+    return self.broker.createConnectorService(connector).then(function () {
         log.info('[%s] Created connector for "%s"', self.id, connector.name);
     }).catch(function (error) {
         log.error('[%s] Failed to create connector for "%s": %s', self.id, connector.name, error);
@@ -661,9 +715,9 @@ BrokerController.prototype._sync_addresses_and_forwarders = function () {
     return this._sync_broker_addresses().then(this._sync_broker_forwarders());
 }
 
-module.exports.create_controller = function (connection, event_sink) {
+module.exports.create_controller = function (connection, get_address_settings, event_sink) {
     var rcg = connection.properties['qd.route-container-group'];
-    var bc = new BrokerController(event_sink);
+    var bc = new BrokerController(event_sink, get_address_settings);
     if (rcg === 'sharded-topic') {
         //only control subscriptions
         bc.excluded_types = type_filter(['queue', 'topic']);
@@ -673,8 +727,8 @@ module.exports.create_controller = function (connection, event_sink) {
     return bc;
 };
 
-module.exports.create_agent = function (event_sink, polling_frequency) {
-    var bc = new BrokerController(event_sink);
+module.exports.create_agent = function (event_sink, get_address_settings, polling_frequency) {
+    var bc = new BrokerController(event_sink, get_address_settings);
     bc.start_polling(polling_frequency);
     return bc;
 };

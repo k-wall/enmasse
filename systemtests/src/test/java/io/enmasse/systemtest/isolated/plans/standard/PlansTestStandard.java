@@ -8,12 +8,14 @@ import io.enmasse.address.model.Address;
 import io.enmasse.address.model.AddressBuilder;
 import io.enmasse.address.model.AddressSpace;
 import io.enmasse.address.model.AddressSpaceBuilder;
+import io.enmasse.address.model.DoneableAddress;
 import io.enmasse.address.model.DoneableAddressSpace;
 import io.enmasse.address.model.Phase;
 import io.enmasse.admin.model.v1.AddressPlan;
 import io.enmasse.admin.model.v1.AddressPlanBuilder;
 import io.enmasse.admin.model.v1.AddressSpacePlan;
 import io.enmasse.admin.model.v1.AddressSpacePlanBuilder;
+import io.enmasse.admin.model.v1.DoneableAddressPlan;
 import io.enmasse.admin.model.v1.ResourceAllowance;
 import io.enmasse.admin.model.v1.ResourceRequest;
 import io.enmasse.admin.model.v1.StandardInfraConfig;
@@ -25,6 +27,7 @@ import io.enmasse.systemtest.UserCredentials;
 import io.enmasse.systemtest.amqp.AmqpClient;
 import io.enmasse.systemtest.bases.isolated.ITestIsolatedStandard;
 import io.enmasse.systemtest.bases.plans.PlansTestBase;
+import io.enmasse.systemtest.broker.ArtemisUtils;
 import io.enmasse.systemtest.logs.CustomLogger;
 import io.enmasse.systemtest.model.address.AddressType;
 import io.enmasse.systemtest.model.addressplan.DestinationPlan;
@@ -38,6 +41,11 @@ import io.enmasse.systemtest.utils.AddressSpaceUtils;
 import io.enmasse.systemtest.utils.AddressUtils;
 import io.enmasse.systemtest.utils.PlanUtils;
 import io.enmasse.systemtest.utils.TestUtils;
+import org.apache.qpid.proton.amqp.Binary;
+import org.apache.qpid.proton.amqp.messaging.AmqpValue;
+import org.apache.qpid.proton.amqp.messaging.Data;
+import org.apache.qpid.proton.amqp.transport.DeliveryState;
+import org.apache.qpid.proton.message.Message;
 import org.junit.jupiter.api.Test;
 import org.slf4j.Logger;
 
@@ -45,10 +53,13 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
+import java.util.Map;
+import java.util.Random;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
+import java.util.stream.Stream;
 
 import static org.hamcrest.CoreMatchers.is;
 import static org.hamcrest.MatcherAssert.assertThat;
@@ -1168,6 +1179,133 @@ class PlansTestStandard extends PlansTestBase implements ITestIsolatedStandard {
         doTestUnknownAddressPlan(addressSpace, stageHolders);
     }
 
+    @Test
+    void testUpdatePlanBrokerCredit_changesPerAddressMaxSize() throws Exception {
+        StandardInfraConfig infra = new StandardInfraConfigBuilder()
+                .withNewMetadata()
+                .withName("vbusch")
+                .endMetadata()
+                .withNewSpec()
+                .withVersion(environment.enmasseVersion())
+                .withBroker(new StandardInfraConfigSpecBrokerBuilder()
+                        .withGlobalMaxSize("1mb")
+                        .withAddressFullPolicy("FAIL")
+                        .withNewResources()
+                        .withMemory("512Mi")
+                        .withStorage("512Mi")
+
+                        .endResources()
+                        .build())
+                .withRouter(PlanUtils.createStandardRouterResourceObject(null, "512Mi", 250, 1))
+                .withAdmin(new StandardInfraConfigSpecAdminBuilder()
+                        .withNewResources()
+                        .withMemory("512Mi")
+                        .endResources()
+                        .build())
+                .endSpec()
+                .build();
+
+        resourcesManager.createInfraConfig(infra);
+
+        //define and create address plans
+        List<ResourceRequest> addressResourcesQueue = Arrays.asList(new ResourceRequest("broker", 0.5), new ResourceRequest("router", 0.0));
+        AddressPlan queuePlan = PlanUtils.createAddressPlanObject("standard-queue-plan", AddressType.QUEUE, addressResourcesQueue);
+        List<ResourceRequest> afterAddressResourcesQueue = Arrays.asList(new ResourceRequest("broker", 0.7), new ResourceRequest("router", 0.0));
+        List<ResourceRequest> afterAddressLargeResourcesQueue = Arrays.asList(new ResourceRequest("broker", 0.9), new ResourceRequest("router", 0.0));
+        AddressPlan afterQueuePlan = PlanUtils.createAddressPlanObject("standard-large-queue-plan", AddressType.QUEUE, afterAddressResourcesQueue);
+
+        isolatedResourcesManager.createAddressPlan(queuePlan);
+        isolatedResourcesManager.createAddressPlan(afterQueuePlan);
+
+        //define and create address space plan
+        List<ResourceAllowance> resources = Arrays.asList(
+                new ResourceAllowance("broker", 9),
+                new ResourceAllowance("router", 5.0),
+                new ResourceAllowance("aggregate", 10.0));
+        List<AddressPlan> addressPlans = Arrays.asList(queuePlan, afterQueuePlan);
+
+        AddressSpacePlan addressSpacePlan = PlanUtils.createAddressSpacePlanObject("queue-plan", infra.getMetadata().getName(), AddressSpaceType.STANDARD, resources, addressPlans);
+        resourcesManager.createAddressSpacePlan(addressSpacePlan);
+
+        //create address space plan with new plan
+        AddressSpace addressSpace = new AddressSpaceBuilder()
+                .withNewMetadata()
+                .withName("planspace")
+                .withNamespace(kubernetes.getInfraNamespace())
+                .endMetadata()
+                .withNewSpec()
+                .withType(AddressSpaceType.STANDARD.toString())
+                .withPlan(addressSpacePlan.getMetadata().getName())
+                .withNewAuthenticationService()
+                .withName("standard-authservice")
+                .endAuthenticationService()
+                .endSpec()
+                .build();
+        resourcesManager.createAddressSpace(addressSpace);
+
+        //deploy destinations
+        Address queueDest = new AddressBuilder()
+                .withNewMetadata()
+                .withNamespace(addressSpace.getMetadata().getNamespace())
+                .withName(AddressUtils.generateAddressMetadataName(addressSpace, "myqueue"))
+                .endMetadata()
+                .withNewSpec()
+                .withType("queue")
+                .withAddress("myqueue")
+                .withPlan(queuePlan.getMetadata().getName())
+                .endSpec()
+                .build();
+        resourcesManager.setAddresses(queueDest);
+
+        //get destinations
+        Address queue = kubernetes.getAddressClient(addressSpace.getMetadata().getNamespace()).withName(queueDest.getMetadata().getName()).get();
+
+        String assertMessage = "Queue plan wasn't set properly";
+        assertEquals(queue.getSpec().getPlan(),
+                queuePlan.getMetadata().getName(), assertMessage);
+
+        //Send messages to ensure queue fills up
+        UserCredentials user = new UserCredentials("test-newplan-name", "test_newplan_password");
+        resourcesManager.createOrUpdateUser(addressSpace, user);
+
+        AmqpClient client = getAmqpClientFactory().createQueueClient(addressSpace);
+        client.getConnectOptions().setCredentials(user);
+        byte[] bytes = new byte[1024 * 100];
+        Random random = new Random();
+        Message message = Message.Factory.create();
+        random.nextBytes(bytes);
+        message.setBody(new AmqpValue(new Data(new Binary(bytes))));
+        message.setAddress(queue.getSpec().getAddress());
+        message.setDurable(true);
+
+//        client.sendMessages(queue.getSpec().getAddress(), (List<String>) Arrays.asList(message.getBody().toString()));
+        Stream<Message> messageStream = Stream.generate(() -> message);
+        int messagesSent = client.sendMessagesCheckDelivery(queue.getSpec().getAddress(), messageStream::iterator,
+                protonDelivery -> protonDelivery.remotelySettled() && protonDelivery.getRemoteState().getType().equals(DeliveryState.DeliveryStateType.Rejected))
+                .get(5, TimeUnit.MINUTES);
+
+        assertTrue(messagesSent > 0, "Verify a few messages were sent before queue fills up");
+
+        //Verify maxSizeBytes are set
+        Map<String, Object> addressSettings = ArtemisUtils.getAddressSettings(kubernetes, addressSpace);
+        assertEquals(Integer.valueOf("524288"), (Integer) addressSettings.get("maxSizeBytes"), "maxSizeBytes should be set");
+
+        //Switch to a large plan
+        Address largeQueue = new DoneableAddress(queue).editSpec().withPlan(afterQueuePlan.getMetadata().getName()).endSpec().done();
+        isolatedResourcesManager.replaceAddress(largeQueue);
+        AddressUtils.waitForDestinationsReady(new TimeoutBudget(5, TimeUnit.MINUTES), largeQueue);
+        addressSettings = ArtemisUtils.getAddressSettings(kubernetes, addressSpace);
+        assertEquals(Integer.valueOf("734003"), (Integer) addressSettings.get("maxSizeBytes"), "maxSizeBytes should be set");
+
+        //Update plan to have more credit
+        AddressPlan updatedAfterQueuePlan = new DoneableAddressPlan(afterQueuePlan).editSpec().withResources(afterAddressLargeResourcesQueue.stream().collect(Collectors.toMap(ResourceRequest::getName, ResourceRequest::getCredit))).endSpec().done();
+        isolatedResourcesManager.replaceAddressPlan(updatedAfterQueuePlan);
+        Thread.sleep(20_000);
+        AddressUtils.waitForDestinationsReady(new TimeoutBudget(5, TimeUnit.MINUTES), largeQueue);
+        AddressUtils.waitForDestinationPlanApplied(new TimeoutBudget(5, TimeUnit.MINUTES), largeQueue);
+        addressSettings = ArtemisUtils.getAddressSettings(kubernetes, addressSpace);
+        assertEquals(Integer.valueOf("943718"), (Integer)addressSettings.get("maxSizeBytes"), "maxSizeBytes should be set");
+    }
 
     //------------------------------------------------------------------------------------------------
     // Help methods

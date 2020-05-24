@@ -167,8 +167,13 @@ Ragent.prototype.sync_router_addresses = function (router, brokers) {
     router.sync_addresses(this.addresses, brokers);
 }
 
+Ragent.prototype.sync_address_addressplan= function (updated) {
+    for (var b in this.connected_brokers) {
+        this.connected_brokers[b].sync_address_addressplan(updated);
+    }
+}
+
 Ragent.prototype.verify_addresses = function (expected) {
-    log.debug('verifying addresses to match: %j', expected);
     for (var r in this.connected_routers) {
         if (!this.connected_routers[r].verify_addresses(expected)) {
             return false;
@@ -353,7 +358,7 @@ Ragent.prototype.configure_handlers = function () {
                 router.on('provisioned', self.check_router_connectors.bind(self));
             });
         } else if (product === 'apache-activemq-artemis') {
-            var broker = broker_controller.create_controller(context.connection, self.event_sink);
+            var broker = broker_controller.create_controller(context.connection, self.broker_address_settings, self.event_sink);
             self.connected_brokers[broker.id] = broker;
             log.info('broker %s connected', broker.id);
             if (self.addresses_initialised) {
