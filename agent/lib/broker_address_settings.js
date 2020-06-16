@@ -33,20 +33,20 @@ function BrokerAddressSettings(config) {
 util.inherits(BrokerAddressSettings, events.EventEmitter);
 
 BrokerAddressSettings.prototype.generate_address_settings = function (address, global_max_size) {
-    log.info('address: %j', address);
     var planStatus = address.status.planStatus;
     if (planStatus && planStatus.resources && planStatus.resources.broker > 0) {
 
         var r = planStatus.resources.broker;
         var p = planStatus.partitions;
-        var allocation = (r && p) ? r / p : (r) ? r : undefined;
+        var allocation = (r && p) ? (r / p) : (r) ? r : undefined;
         if (allocation) {
+            var maxSizeBytes = Math.round(allocation * global_max_size);
             return {
-                maxSizeBytes: Math.round(allocation * global_max_size)
+                maxSizeBytes: maxSizeBytes
             };
         }
     }
-    log.debug('no broker resource required for %s, therefore not applying address settings', planStatus.name);
+    log.info('no broker resource required for %s, therefore not applying address settings', address.name);
 };
 
 BrokerAddressSettings.prototype.read_global_max_size = function () {

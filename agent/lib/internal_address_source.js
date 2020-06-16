@@ -100,7 +100,7 @@ function same_address_definition(a, b) {
 
 function same_address_status(a, b) {
     if (a === undefined) return b === undefined;
-    return a.isReady === b.isReady && a.phase === b.phase && same_messages(a.messages, b.messages);
+    return a.isReady === b.isReady && a.phase === b.phase && same_messages(a.messages, b.messages) && same_plan_status(a.planStatus, b.planStatus);
 }
 
 function same_address_definition_and_status(a, b) {
@@ -108,12 +108,18 @@ function same_address_definition_and_status(a, b) {
 }
 
 function same_address_plan(a, b) {
+    if (a === undefined) return b === undefined;
     return a.plan === b.plan;
 }
 
-function same_address_plan(a, b) {
+function same_plan_status(a, b) {
     if (a === undefined) return b === undefined;
-    return a.plan === b.plan;
+    return b && a.name === b.name && a.partitions === b.partitions && same_addressplan_resources(a.resources, b.resources);
+}
+
+function same_addressplan_resources(a, b) {
+    if (a === b) return true;
+    return a && b && a.broker === b.broker && a.router === b.router;
 }
 
 function address_compare(a, b) {
@@ -212,15 +218,11 @@ AddressSource.prototype.updated = function (objects) {
     var addresses = objects.filter(is_defined).filter(function (address) {
         return (self.config.ADDRESS_SPACE_PREFIX === undefined) || address.metadata.name.startsWith(self.config.ADDRESS_SPACE_PREFIX);
     }).map(extract_spec);
-    var changed_plans = this.get_changes('addresses_plans_changed', addresses, same_plan_status_resources);
     var changes = this.get_changes('addresses_defined', addresses, same_address_definition_and_status);
     if (changes) {
         this.update_readiness(changes);
         this.dispatch('addresses_defined', addresses, changes.description);
         this.dispatch_if_changed('addresses_ready', addresses.filter(ready), same_address_definition);
-    }
-    if (changed_plans) {
-        this.dispatch('addresses_plans_changed', addresses, changed_plans.description);
     }
 };
 

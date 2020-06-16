@@ -30,6 +30,8 @@ import io.enmasse.systemtest.model.addressspace.AddressSpaceType;
 import io.enmasse.systemtest.time.TimeoutBudget;
 import io.enmasse.systemtest.utils.AddressUtils;
 import io.enmasse.systemtest.utils.PlanUtils;
+import io.enmasse.systemtest.utils.TestUtils;
+import io.fabric8.kubernetes.api.model.apps.Deployment;
 import org.apache.qpid.proton.amqp.Binary;
 import org.apache.qpid.proton.amqp.messaging.AmqpValue;
 import org.apache.qpid.proton.amqp.messaging.Data;
@@ -38,16 +40,15 @@ import org.apache.qpid.proton.message.Message;
 import org.junit.jupiter.api.Test;
 import org.slf4j.Logger;
 
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.Collections;
-import java.util.List;
-import java.util.Map;
-import java.util.Random;
+import java.time.Duration;
+import java.util.*;
 import java.util.concurrent.TimeUnit;
+import java.util.function.BooleanSupplier;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
+import static org.hamcrest.CoreMatchers.is;
+import static org.hamcrest.MatcherAssert.assertThat;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -173,7 +174,7 @@ public class PlansTestBrokered extends PlansTestBase implements ITestIsolatedBro
     void testUpdatePlanBrokerCredit_changesPerAddressMaxSize() throws Exception {
         BrokeredInfraConfig infra = new BrokeredInfraConfigBuilder()
                 .withNewMetadata()
-                .withName("vbusch")
+                .withName("upd-plan-credit-infra")
                 .endMetadata()
                 .withNewSpec()
                 .withVersion(environment.enmasseVersion())
@@ -183,7 +184,6 @@ public class PlansTestBrokered extends PlansTestBase implements ITestIsolatedBro
                         .withNewResources()
                         .withMemory("512Mi")
                         .withStorage("512Mi")
-
                         .endResources()
                         .build())
                 .endSpec()
@@ -192,19 +192,17 @@ public class PlansTestBrokered extends PlansTestBase implements ITestIsolatedBro
         resourcesManager.createInfraConfig(infra);
 
         //define and create address plans
-        List<ResourceRequest> addressResourcesQueue = Arrays.asList(new ResourceRequest("broker", 0.5));
+        List<ResourceRequest> addressResourcesQueue = List.of(new ResourceRequest("broker", 0.5));
         AddressPlan queuePlan = PlanUtils.createAddressPlanObject("brokered-queue-plan", AddressType.QUEUE, addressResourcesQueue);
-        List<ResourceRequest> afterAddressResourcesQueue = Arrays.asList(new ResourceRequest("broker", 0.7));
-        List<ResourceRequest> afterAddressLargeResourcesQueue = Arrays.asList(new ResourceRequest("broker", 0.9));
+        List<ResourceRequest> afterAddressResourcesQueue = List.of(new ResourceRequest("broker", 0.7));
+        List<ResourceRequest> afterAddressLargeResourcesQueue = List.of(new ResourceRequest("broker", 0.9));
         AddressPlan afterQueuePlan = PlanUtils.createAddressPlanObject("brokered-large-queue-plan", AddressType.QUEUE, afterAddressResourcesQueue);
 
         isolatedResourcesManager.createAddressPlan(queuePlan);
         isolatedResourcesManager.createAddressPlan(afterQueuePlan);
 
         //define and create address space plan
-        List<ResourceAllowance> resources = Arrays.asList(
-                new ResourceAllowance("broker", 9),
-                new ResourceAllowance("aggregate", 10.0));
+        List<ResourceAllowance> resources = List.of(new ResourceAllowance("broker", 1.9));
         List<AddressPlan> addressPlans = Arrays.asList(queuePlan, afterQueuePlan);
 
         AddressSpacePlan addressSpacePlan = PlanUtils.createAddressSpacePlanObject("queue-plan", infra.getMetadata().getName(), AddressSpaceType.BROKERED, resources, addressPlans);
@@ -213,7 +211,7 @@ public class PlansTestBrokered extends PlansTestBase implements ITestIsolatedBro
         //create address space plan with new plan
         AddressSpace addressSpace = new AddressSpaceBuilder()
                 .withNewMetadata()
-                .withName("planspace")
+                .withName("upd-plan-credit-space")
                 .withNamespace(kubernetes.getInfraNamespace())
                 .endMetadata()
                 .withNewSpec()
@@ -284,6 +282,12 @@ public class PlansTestBrokered extends PlansTestBase implements ITestIsolatedBro
         AddressPlan updatedAfterQueuePlan = new AddressPlanBuilder(afterQueuePlan).editSpec().withResources(afterAddressLargeResourcesQueue.stream().collect(Collectors.toMap(ResourceRequest::getName, ResourceRequest::getCredit))).endSpec().build();
         isolatedResourcesManager.replaceAddressPlan(updatedAfterQueuePlan);
         AddressUtils.waitForDestinationPlanApplied(new TimeoutBudget(5, TimeUnit.MINUTES), largeQueue);
+        TestUtils.waitUntilCondition(() -> {
+            Address a = kubernetes.getAddressClient(addressSpace.getMetadata().getNamespace()).withName(largeQueue.getMetadata().getName()).get();
+            return a.getStatus().getPlanStatus() != null && a.getStatus().getPlanStatus().getResources().containsKey(afterAddressLargeResourcesQueue.get(0).getName()) &&
+                    a.getStatus().getPlanStatus().getResources().get(afterAddressLargeResourcesQueue.get(0).getName()) == afterAddressLargeResourcesQueue.get(0).getCredit();
+        }, Duration.ofMinutes(1),  Duration.ofSeconds(1));
+
         addressSettings = ArtemisUtils.getAddressSettings(kubernetes, addressSpace);
         assertEquals(Integer.valueOf("943718"), (Integer)addressSettings.get("maxSizeBytes"), "maxSizeBytes should be set");
     }

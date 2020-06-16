@@ -94,18 +94,12 @@ BrokerController.prototype.addresses_defined = function (addresses) {
     return this.check_broker_addresses();
 };
 
-BrokerController.prototype.check_address_settings = function () {
-    if (this.broker !== undefined && this.addresses !== undefined) {
-        this.sync_address_addressplan(this.addresses);
-    }
-};
-
 BrokerController.prototype.sync_addresses = function (addresses) {
     this.addresses = addresses.reduce(function (map, a) { map[a.address] = a; return map; }, {});
     return this.serial_sync();
 };
 
-BrokerController.prototype.sync_address_addressplan = function (addresses) {
+BrokerController.prototype.sync_addresssettings = function (addresses) {
     var limit = plimit(250);
     let update_address_setting_fn = limit.bind(null, this.update_address_setting.bind(this));
 
@@ -276,7 +270,7 @@ function compare_address_settings(orig_address_settings, new_address_settings) {
         log.debug('comparing %s: %s %s', name, orig_address_settings[name], new_address_settings[name])
         if (new_address_settings[name]) {
             var compare = myutils.string_compare(orig_address_settings[name], new_address_settings[name]);
-            if (compare != 0) {
+            if (compare !== 0) {
                 return compare;
             }
         } else {
@@ -425,20 +419,20 @@ function translate(addresses_in, excluded_names, excluded_types) {
 
 BrokerController.prototype.update_address_setting = function (a) {
     var self = this;
-    var name = a.metadata.name;
+    var name = a.address;
     return self.broker.getAddressSettings(name).then(function (orig_settings) {
         return self.get_address_settings(a).then(function (new_settings) {
             if (new_settings) {
                 if (compare_address_settings(orig_settings, new_settings) !== 0) {
-                    log.debug('[%s] Updating address settings %s', self.id, name);
+                    log.info('[%s] Updating address settings %s', self.id, name);
                         return self.broker.addAddressSettings(name, new_settings);
                 } else {
                     log.debug('[%s] Address settings match for %s: not updating', self.id, name);
                     return Promise.resolve();
                 }
             } else {
-                return Promise.resolve();
                 //Settings weren't created, and reason is already logged. Most likely broker resource not required.
+                return Promise.resolve();
             }
         }).catch(function (error) {
             log.error('[%s] Failed to create new address setting %s: %s', self.id, name, error);
@@ -600,20 +594,31 @@ BrokerController.prototype._sync_broker_addresses = function (retry) {
     var self = this;
 
     return this.broker.listAddresses().then(function (results) {
+        var addrSettings = self.sync_addresssettings(values(self.addresses).filter((o) => o.type === 'subscription' || o.type === 'queue'));
         var actual = translate(results, excluded_addresses, self.excluded_types);
         var stale = values(difference(actual, self.addresses, same_address));
         var missing = values(difference(self.addresses, actual, same_address));
         log.info('[%s] checking addresses, desired=%j, actual=%j => delete %j and create %j', self.id, values(self.addresses).map(address_and_type), values(actual),
             stale.map(address_and_type), missing.map(address_and_type));
         self._set_sync_status(stale.length, missing.length);
-        return self.delete_addresses(stale).then(
-            function () {
-                return self.create_addresses(missing.filter(function (o) { return o.type !== 'subscription' })).then(function () {
-                    return self.create_addresses(missing.filter(function (o) { return o.type === 'subscription' })).then(function () {
-                        return retry ? true : self._sync_broker_addresses(true);
+        return addrSettings.then(() => {
+                return self.delete_addresses(stale).then(
+                    function () {
+                        return self.create_addresses(missing.filter(function (o) {
+                            return o.type !== 'subscription'
+                        })).then(function () {
+                            return self.create_addresses(missing.filter(function (o) {
+                                return o.type === 'subscription'
+                            })).then(function () {
+                                return retry ? true : self._sync_broker_addresses(true);
+                            });
+                        });
                     });
-                });
-            });
+
+
+            }
+        );
+
     }).catch(function (e) {
         log.error('[%s] failed to retrieve addresses: %s', self.id, e);
         throw e;
