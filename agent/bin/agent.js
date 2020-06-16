@@ -74,11 +74,7 @@ function start(env) {
                     var ragent = new Ragent();
                     ragent.disable_connectivity = true;
                     bind_event(address_source, 'addresses_ready', ragent, 'sync_addresses');
-
                     ragent.broker_address_settings = address_settings.get_address_settings_async.bind(address_settings);
-
-                    bind_event(address_source, 'addresses_ready', ragent, 'sync_addresses');
-                    bind_event(address_source, 'addresses_plans_changed', ragent, 'sync_address_addressplan');
                     ragent.start_listening(env);
                     ragent.listen_health({HEALTH_PORT:8888});
                 }

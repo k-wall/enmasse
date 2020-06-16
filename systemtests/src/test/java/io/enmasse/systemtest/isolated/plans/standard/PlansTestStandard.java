@@ -8,14 +8,12 @@ import io.enmasse.address.model.Address;
 import io.enmasse.address.model.AddressBuilder;
 import io.enmasse.address.model.AddressSpace;
 import io.enmasse.address.model.AddressSpaceBuilder;
-import io.enmasse.address.model.DoneableAddress;
 import io.enmasse.address.model.DoneableAddressSpace;
 import io.enmasse.address.model.Phase;
 import io.enmasse.admin.model.v1.AddressPlan;
 import io.enmasse.admin.model.v1.AddressPlanBuilder;
 import io.enmasse.admin.model.v1.AddressSpacePlan;
 import io.enmasse.admin.model.v1.AddressSpacePlanBuilder;
-import io.enmasse.admin.model.v1.DoneableAddressPlan;
 import io.enmasse.admin.model.v1.ResourceAllowance;
 import io.enmasse.admin.model.v1.ResourceRequest;
 import io.enmasse.admin.model.v1.StandardInfraConfig;
@@ -49,6 +47,7 @@ import org.apache.qpid.proton.message.Message;
 import org.junit.jupiter.api.Test;
 import org.slf4j.Logger;
 
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
@@ -1183,7 +1182,7 @@ class PlansTestStandard extends PlansTestBase implements ITestIsolatedStandard {
     void testUpdatePlanBrokerCredit_changesPerAddressMaxSize() throws Exception {
         StandardInfraConfig infra = new StandardInfraConfigBuilder()
                 .withNewMetadata()
-                .withName("vbusch")
+                .withName("upd-plan-credit-infra")
                 .endMetadata()
                 .withNewSpec()
                 .withVersion(environment.enmasseVersion())
@@ -1208,11 +1207,11 @@ class PlansTestStandard extends PlansTestBase implements ITestIsolatedStandard {
         resourcesManager.createInfraConfig(infra);
 
         //define and create address plans
-        List<ResourceRequest> addressResourcesQueue = Arrays.asList(new ResourceRequest("broker", 0.5), new ResourceRequest("router", 0.0));
-        AddressPlan queuePlan = PlanUtils.createAddressPlanObject("standard-queue-plan", AddressType.QUEUE, addressResourcesQueue);
-        List<ResourceRequest> afterAddressResourcesQueue = Arrays.asList(new ResourceRequest("broker", 0.7), new ResourceRequest("router", 0.0));
-        List<ResourceRequest> afterAddressLargeResourcesQueue = Arrays.asList(new ResourceRequest("broker", 0.9), new ResourceRequest("router", 0.0));
-        AddressPlan afterQueuePlan = PlanUtils.createAddressPlanObject("standard-large-queue-plan", AddressType.QUEUE, afterAddressResourcesQueue);
+        List<ResourceRequest> addressResourcesQueue = List.of(new ResourceRequest("broker", 0.5), new ResourceRequest("router", 0.001));
+        AddressPlan queuePlan = PlanUtils.createAddressPlanObject("upd-plan-credit-queue-plan", AddressType.QUEUE, addressResourcesQueue);
+        List<ResourceRequest> afterAddressResourcesQueue = List.of(new ResourceRequest("broker", 0.7), new ResourceRequest("router", 0.0));
+        List<ResourceRequest> afterAddressLargeResourcesQueue = List.of(new ResourceRequest("broker", 0.9), new ResourceRequest("router", 0.001));
+        AddressPlan afterQueuePlan = PlanUtils.createAddressPlanObject("upd-plan-credit-large-queue-plan", AddressType.QUEUE, afterAddressResourcesQueue);
 
         isolatedResourcesManager.createAddressPlan(queuePlan);
         isolatedResourcesManager.createAddressPlan(afterQueuePlan);
@@ -1224,13 +1223,13 @@ class PlansTestStandard extends PlansTestBase implements ITestIsolatedStandard {
                 new ResourceAllowance("aggregate", 10.0));
         List<AddressPlan> addressPlans = Arrays.asList(queuePlan, afterQueuePlan);
 
-        AddressSpacePlan addressSpacePlan = PlanUtils.createAddressSpacePlanObject("queue-plan", infra.getMetadata().getName(), AddressSpaceType.STANDARD, resources, addressPlans);
+        AddressSpacePlan addressSpacePlan = PlanUtils.createAddressSpacePlanObject("upd-plan-credit-queue-plan", infra.getMetadata().getName(), AddressSpaceType.STANDARD, resources, addressPlans);
         resourcesManager.createAddressSpacePlan(addressSpacePlan);
 
         //create address space plan with new plan
         AddressSpace addressSpace = new AddressSpaceBuilder()
                 .withNewMetadata()
-                .withName("planspace")
+                .withName("upd-plan-credit-space")
                 .withNamespace(kubernetes.getInfraNamespace())
                 .endMetadata()
                 .withNewSpec()
@@ -1291,18 +1290,27 @@ class PlansTestStandard extends PlansTestBase implements ITestIsolatedStandard {
         assertEquals(Integer.valueOf("524288"), (Integer) addressSettings.get("maxSizeBytes"), "maxSizeBytes should be set");
 
         //Switch to a large plan
-        Address largeQueue = new DoneableAddress(queue).editSpec().withPlan(afterQueuePlan.getMetadata().getName()).endSpec().done();
+        Address largeQueue = new AddressBuilder(queue).editSpec().withPlan(afterQueuePlan.getMetadata().getName()).endSpec().build();
         isolatedResourcesManager.replaceAddress(largeQueue);
         AddressUtils.waitForDestinationsReady(new TimeoutBudget(5, TimeUnit.MINUTES), largeQueue);
+        TestUtils.waitUntilCondition(() -> {
+            Address a = kubernetes.getAddressClient(addressSpace.getMetadata().getNamespace()).withName(largeQueue.getMetadata().getName()).get();
+            return a.getStatus().getPlanStatus() != null && a.getStatus().getPlanStatus().getResources().containsKey(afterAddressResourcesQueue.get(0).getName()) &&
+                    a.getStatus().getPlanStatus().getResources().get(afterAddressResourcesQueue.get(0).getName()) == afterAddressResourcesQueue.get(0).getCredit();
+        }, Duration.ofMinutes(1),  Duration.ofSeconds(1));
         addressSettings = ArtemisUtils.getAddressSettings(kubernetes, addressSpace);
         assertEquals(Integer.valueOf("734003"), (Integer) addressSettings.get("maxSizeBytes"), "maxSizeBytes should be set");
 
         //Update plan to have more credit
-        AddressPlan updatedAfterQueuePlan = new DoneableAddressPlan(afterQueuePlan).editSpec().withResources(afterAddressLargeResourcesQueue.stream().collect(Collectors.toMap(ResourceRequest::getName, ResourceRequest::getCredit))).endSpec().done();
+        AddressPlan updatedAfterQueuePlan = new AddressPlanBuilder(afterQueuePlan).editSpec().withResources(afterAddressLargeResourcesQueue.stream().collect(Collectors.toMap(ResourceRequest::getName, ResourceRequest::getCredit))).endSpec().build();
         isolatedResourcesManager.replaceAddressPlan(updatedAfterQueuePlan);
         Thread.sleep(20_000);
         AddressUtils.waitForDestinationsReady(new TimeoutBudget(5, TimeUnit.MINUTES), largeQueue);
-        AddressUtils.waitForDestinationPlanApplied(new TimeoutBudget(5, TimeUnit.MINUTES), largeQueue);
+        TestUtils.waitUntilCondition(() -> {
+            Address a = kubernetes.getAddressClient(addressSpace.getMetadata().getNamespace()).withName(largeQueue.getMetadata().getName()).get();
+            return a.getStatus().getPlanStatus() != null && a.getStatus().getPlanStatus().getResources().containsKey(afterAddressLargeResourcesQueue.get(0).getName()) &&
+                    a.getStatus().getPlanStatus().getResources().get(afterAddressLargeResourcesQueue.get(0).getName()) == afterAddressLargeResourcesQueue.get(0).getCredit();
+        }, Duration.ofMinutes(1),  Duration.ofSeconds(1));
         addressSettings = ArtemisUtils.getAddressSettings(kubernetes, addressSpace);
         assertEquals(Integer.valueOf("943718"), (Integer)addressSettings.get("maxSizeBytes"), "maxSizeBytes should be set");
     }

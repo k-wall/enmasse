@@ -31,7 +31,6 @@ import io.enmasse.systemtest.time.TimeoutBudget;
 import io.enmasse.systemtest.utils.AddressUtils;
 import io.enmasse.systemtest.utils.PlanUtils;
 import io.enmasse.systemtest.utils.TestUtils;
-import io.fabric8.kubernetes.api.model.apps.Deployment;
 import org.apache.qpid.proton.amqp.Binary;
 import org.apache.qpid.proton.amqp.messaging.AmqpValue;
 import org.apache.qpid.proton.amqp.messaging.Data;
@@ -205,7 +204,7 @@ public class PlansTestBrokered extends PlansTestBase implements ITestIsolatedBro
         List<ResourceAllowance> resources = List.of(new ResourceAllowance("broker", 1.9));
         List<AddressPlan> addressPlans = Arrays.asList(queuePlan, afterQueuePlan);
 
-        AddressSpacePlan addressSpacePlan = PlanUtils.createAddressSpacePlanObject("queue-plan", infra.getMetadata().getName(), AddressSpaceType.BROKERED, resources, addressPlans);
+        AddressSpacePlan addressSpacePlan = PlanUtils.createAddressSpacePlanObject("upd-plan-credit-queue-plan", infra.getMetadata().getName(), AddressSpaceType.BROKERED, resources, addressPlans);
         resourcesManager.createAddressSpacePlan(addressSpacePlan);
 
         //create address space plan with new plan
@@ -281,13 +280,12 @@ public class PlansTestBrokered extends PlansTestBase implements ITestIsolatedBro
         //Update plan to have more credit
         AddressPlan updatedAfterQueuePlan = new AddressPlanBuilder(afterQueuePlan).editSpec().withResources(afterAddressLargeResourcesQueue.stream().collect(Collectors.toMap(ResourceRequest::getName, ResourceRequest::getCredit))).endSpec().build();
         isolatedResourcesManager.replaceAddressPlan(updatedAfterQueuePlan);
-        AddressUtils.waitForDestinationPlanApplied(new TimeoutBudget(5, TimeUnit.MINUTES), largeQueue);
+        AddressUtils.waitForDestinationsReady(new TimeoutBudget(5, TimeUnit.MINUTES), largeQueue);
         TestUtils.waitUntilCondition(() -> {
             Address a = kubernetes.getAddressClient(addressSpace.getMetadata().getNamespace()).withName(largeQueue.getMetadata().getName()).get();
             return a.getStatus().getPlanStatus() != null && a.getStatus().getPlanStatus().getResources().containsKey(afterAddressLargeResourcesQueue.get(0).getName()) &&
                     a.getStatus().getPlanStatus().getResources().get(afterAddressLargeResourcesQueue.get(0).getName()) == afterAddressLargeResourcesQueue.get(0).getCredit();
-        }, Duration.ofMinutes(1),  Duration.ofSeconds(1));
-
+        }, Duration.ofMinutes(1),  Duration.ofSeconds(10));
         addressSettings = ArtemisUtils.getAddressSettings(kubernetes, addressSpace);
         assertEquals(Integer.valueOf("943718"), (Integer)addressSettings.get("maxSizeBytes"), "maxSizeBytes should be set");
     }

@@ -95,7 +95,10 @@ function same_address_definition(a, b) {
     if (a.address === b.address && a.type === b.type && !same_allocation(a.allocated_to, b.allocated_to)) {
         log.info('allocation changed for %s %s: %s <-> %s', a.type, a.address, JSON.stringify(a.allocated_to), JSON.stringify(b.allocated_to));
     }
-    return a.address === b.address && a.type === b.type && same_allocation(a.allocated_to, b.allocated_to);
+    return a.address === b.address
+        && a.type === b.type
+        && same_allocation(a.allocated_to, b.allocated_to)
+        && same_plan_status(a.status ? a.status.planStatus : undefined, b.status ? b.status.planStatus : undefined);
 }
 
 function same_address_status(a, b) {

@@ -36,7 +36,8 @@ function BrokerController(event_sink, get_address_settings) {
             return get_address_settings(a, self.broker.getGlobalMaxSize());
         }
     } else {
-        this.get_address_settings = function () { return Promise.resolve(); };
+        this.get_address_settings = function () {
+            return Promise.resolve(); };
     }
     this.serial_sync = myutils.serialize(this._sync_addresses_and_forwarders.bind(this));
     this.addresses_synchronized = false;
