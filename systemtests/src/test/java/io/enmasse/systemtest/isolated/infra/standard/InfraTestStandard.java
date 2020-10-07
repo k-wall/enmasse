@@ -8,18 +8,7 @@ import io.enmasse.address.model.Address;
 import io.enmasse.address.model.AddressBuilder;
 import io.enmasse.address.model.AddressSpaceBuilder;
 import io.enmasse.address.model.DoneableAddressSpace;
-import io.enmasse.admin.model.v1.AddressSpacePlan;
-import io.enmasse.admin.model.v1.AddressSpacePlanBuilder;
-import io.enmasse.admin.model.v1.ResourceAllowance;
-import io.enmasse.admin.model.v1.ResourceRequest;
-import io.enmasse.admin.model.v1.StandardInfraConfig;
-import io.enmasse.admin.model.v1.StandardInfraConfigBuilder;
-import io.enmasse.admin.model.v1.StandardInfraConfigSpecAdmin;
-import io.enmasse.admin.model.v1.StandardInfraConfigSpecAdminBuilder;
-import io.enmasse.admin.model.v1.StandardInfraConfigSpecBroker;
-import io.enmasse.admin.model.v1.StandardInfraConfigSpecBrokerBuilder;
-import io.enmasse.admin.model.v1.StandardInfraConfigSpecRouter;
-import io.enmasse.admin.model.v1.StandardInfraConfigSpecRouterBuilder;
+import io.enmasse.admin.model.v1.*;
 import io.enmasse.systemtest.amqp.AmqpClient;
 import io.enmasse.systemtest.annotations.ExternalClients;
 import io.enmasse.systemtest.bases.infra.InfraTestBase;
@@ -102,10 +91,14 @@ class InfraTestStandard extends InfraTestBase implements ITestIsolatedStandard {
                 .build();
         resourcesManager.createInfraConfig(testInfra);
 
-        exampleAddressPlan = PlanUtils.createAddressPlanObject("example-queue-plan-standard", AddressType.QUEUE,
+        exampleAddressPlan = PlanUtils.createAddressPlanObject("example-topic-plan-standard", AddressType.TOPIC,
+                Arrays.asList(new ResourceRequest("broker", 1.0), new ResourceRequest("router", 1.0)));
+
+        AddressPlan exampleAddressPlanSub = PlanUtils.createAddressPlanObject("example-sub-plan-standard1", AddressType.SUBSCRIPTION,
                 Arrays.asList(new ResourceRequest("broker", 1.0), new ResourceRequest("router", 1.0)));
 
         resourcesManager.createAddressPlan(exampleAddressPlan);
+        resourcesManager.createAddressPlan(exampleAddressPlanSub);
 
         AddressSpacePlan exampleSpacePlan = new AddressSpacePlanBuilder()
                 .withNewMetadata()
@@ -163,6 +156,119 @@ class InfraTestStandard extends InfraTestBase implements ITestIsolatedStandard {
                 InfraConfiguration.router(null, "256Mi", routerTemplateSpec, 1),
                 InfraConfiguration.admin(null, "512Mi", adminTemplateSpec));
     }
+
+    @Test
+    @Tag(ACCEPTANCE)
+    void testCreateInfra_issue5130() throws Exception {
+        PodTemplateSpec brokerTemplateSpec = PlanUtils.createTemplateSpec(Collections.singletonMap("mycomponent", "broker"), "mybrokernode", "broker");
+        PodTemplateSpec adminTemplateSpec = PlanUtils.createTemplateSpec(Collections.singletonMap("mycomponent", "admin"), "myadminnode", "admin");
+        PodTemplateSpec routerTemplateSpec = PlanUtils.createTemplateSpec(Collections.singletonMap("mycomponent", "router"), "myrouternode", "router");
+        StandardInfraConfig testInfra = new StandardInfraConfigBuilder()
+                .withNewMetadata()
+                .withName("test-infra-1-standard")
+                .endMetadata()
+                .withNewSpec()
+                .withVersion(environment.enmasseVersion())
+                .withBroker(new StandardInfraConfigSpecBrokerBuilder()
+                        .withAddressFullPolicy("FAIL")
+                        .withNewResources()
+                        .withMemory("512Mi")
+                        .withStorage("1Gi")
+                        .endResources()
+                        .withPodTemplate(brokerTemplateSpec)
+                        .withJavaOpts("-Dsystemtest=property")
+                        .build())
+                .withRouter(new StandardInfraConfigSpecRouterBuilder()
+                        .withNewResources()
+                        .withMemory("256Mi")
+                        .endResources()
+                        .withPodTemplate(routerTemplateSpec)
+                        .build())
+                .withAdmin(new StandardInfraConfigSpecAdminBuilder()
+                        .withNewResources()
+                        .withMemory("512Mi")
+                        .endResources()
+                        .withPodTemplate(adminTemplateSpec)
+                        .build())
+                .endSpec()
+                .build();
+        resourcesManager.createInfraConfig(testInfra);
+
+        exampleAddressPlan = PlanUtils.createAddressPlanObject("example-topic-plan-standard", AddressType.TOPIC,
+                Arrays.asList(new ResourceRequest("broker", 1.0), new ResourceRequest("router", 1.0)));
+
+        AddressPlan exampleAddressPlanSub = PlanUtils.createAddressPlanObject("example-sub-plan-standard1", AddressType.SUBSCRIPTION,
+                Arrays.asList(new ResourceRequest("broker", 1.0), new ResourceRequest("router", 1.0)));
+
+        resourcesManager.createAddressPlan(exampleAddressPlan);
+        resourcesManager.createAddressPlan(exampleAddressPlanSub);
+
+        AddressSpacePlan exampleSpacePlan = new AddressSpacePlanBuilder()
+                .withNewMetadata()
+                .withName("example-space-plan-standard")
+                .withNamespace(kubernetes.getInfraNamespace())
+                .endMetadata()
+                .withNewSpec()
+                .withAddressSpaceType(AddressSpaceType.STANDARD.toString())
+                .withShortDescription("Custom systemtests defined address space plan")
+                .withInfraConfigRef(testInfra.getMetadata().getName())
+                .withResourceLimits(Arrays.asList(
+                        new ResourceAllowance("broker", 3.0),
+                        new ResourceAllowance("router", 3.0),
+                        new ResourceAllowance("aggregate", 5.0))
+                        .stream().collect(Collectors.toMap(ResourceAllowance::getName, ResourceAllowance::getMax)))
+                .withAddressPlans(List.of(exampleAddressPlan, exampleAddressPlanSub)
+                        .stream().map(addressPlan -> addressPlan.getMetadata().getName()).collect(Collectors.toList()))
+                .endSpec()
+                .build();
+        resourcesManager.createAddressSpacePlan(exampleSpacePlan);
+
+        exampleAddressSpace = new AddressSpaceBuilder()
+                .withNewMetadata()
+                .withName("example-address-space")
+                .withNamespace(kubernetes.getInfraNamespace())
+                .endMetadata()
+                .withNewSpec()
+                .withType(AddressSpaceType.STANDARD.toString())
+                .withPlan(exampleSpacePlan.getMetadata().getName())
+                .withNewAuthenticationService()
+                .withName("standard-authservice")
+                .endAuthenticationService()
+                .endSpec()
+                .build();
+
+        resourcesManager.createAddressSpace(exampleAddressSpace);
+
+        exampleAddress = new AddressBuilder()
+                .withNewMetadata()
+                .withNamespace(exampleSpacePlan.getMetadata().getNamespace())
+                .withName(AddressUtils.generateAddressMetadataName(exampleAddressSpace, "example-topic"))
+                .endMetadata()
+                .withNewSpec()
+                .withType(AddressType.TOPIC.toString())
+                .withAddress("example-topic")
+                .withPlan(exampleAddressPlan.getMetadata().getName())
+                .endSpec()
+                .build();
+
+        Address exampleAddress1 = new AddressBuilder()
+                .withNewMetadata()
+                .withNamespace(exampleSpacePlan.getMetadata().getNamespace())
+                .withName(AddressUtils.generateAddressMetadataName(exampleAddressSpace, "example-sub"))
+                .endMetadata()
+                .withNewSpec()
+                .withType(AddressType.SUBSCRIPTION.toString())
+                .withTopic(exampleAddress.getSpec().getAddress())
+                .withAddress("example-sub")
+                .withPlan(exampleAddressPlanSub.getMetadata().getName())
+                .endSpec()
+                .build();
+
+        resourcesManager.setAddresses(exampleAddress, exampleAddress1);
+
+        resourcesManager.createOrUpdateUser(exampleAddressSpace, exampleUser);
+    }
+
 
     @Test
     @ExternalClients
